@@ -1,0 +1,30 @@
+-- Demonstrates Phase 3 IFC: information flow violations
+-- Expected: F001 (data flows to restricted sink)
+
+intent: "Test information flow control"
+scope: test.ifc
+risk: medium
+
+type SecretData = Record
+  fields:
+    secret: String [classified, no_log]
+    public_info: String
+
+  flow_constraints:
+    never_flows_to: [log_sink, public_api]
+
+contract leak_secret(data: SecretData) -> String
+  precondition:
+    data.secret != ""
+
+  postcondition:
+    result != ""
+
+  effects:
+    reads [data]
+    touches_nothing_else
+
+  body:
+    log_sink.write(data.secret)
+    public_api.send(data.public_info)
+    return data.public_info

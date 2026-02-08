@@ -1,0 +1,22 @@
+intent: "Process sensor data with ownership-based memory management"
+scope: iot.sensors
+risk: low
+
+contract process_data(input: SensorReading) -> AnalysisResult
+  precondition:
+    input.size > 0
+    input.timestamp != Timestamp(0)
+
+  postcondition:
+    result.source_id == input.sensor_id
+    result.quality >= 0.0
+
+  effects:
+    reads [input]
+    touches_nothing_else
+
+  body:
+    buffer = Buffer.allocate(input.size)
+    filtered = filter_noise(buffer, input)
+    result = analyze(filtered)
+    return result

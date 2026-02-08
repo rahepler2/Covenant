@@ -1,0 +1,22 @@
+intent: "Demonstrate shared state with transactional access"
+scope: finance.ledger
+risk: high
+
+shared ledger: Ledger
+  access: transactional
+  isolation: serializable
+  audit: full_history
+
+contract get_balance(account: Account) -> Currency
+  precondition:
+    account.active == true
+
+  postcondition:
+    result >= Currency(0)
+
+  effects:
+    reads [account.balance]
+    touches_nothing_else
+
+  body:
+    return account.balance
