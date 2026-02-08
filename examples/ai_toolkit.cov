@@ -1,0 +1,151 @@
+-- Demonstrates Covenant's AI-age standard library (tier 2)
+-- Uses embeddings, prompts, and guardrails — all work offline
+
+intent: "Demonstrate AI toolkit: embeddings, prompts, and guardrails"
+scope: demo.ai_toolkit
+risk: low
+
+use embeddings
+use prompts
+use guardrails
+
+contract test_embeddings() -> String
+  precondition:
+    true
+
+  postcondition:
+    result != ""
+
+  body:
+    -- Create some vectors and compute similarity
+    vec_a = [1.0, 0.0, 0.0]
+    vec_b = [0.0, 1.0, 0.0]
+    vec_c = [1.0, 0.1, 0.0]
+
+    sim_ab = embeddings.cosine(vec_a, vec_b)
+    sim_ac = embeddings.cosine(vec_a, vec_c)
+
+    print("Cosine similarity A vs B (orthogonal):")
+    print(sim_ab)
+    print("Cosine similarity A vs C (similar):")
+    print(sim_ac)
+
+    -- Normalize a vector
+    raw = [3.0, 4.0]
+    normed = embeddings.normalize(raw)
+    print("Normalized [3,4]:")
+    print(normed)
+
+    -- Dot product
+    dp = embeddings.dot(vec_a, vec_c)
+    print("Dot product A . C:")
+    print(dp)
+
+    return "embeddings OK"
+
+contract test_prompts() -> String
+  precondition:
+    true
+
+  postcondition:
+    result != ""
+
+  body:
+    -- Template substitution
+    tmpl = "Hello {name}, welcome to {place}!"
+    filled = prompts.template(tmpl, name: "Alice", place: "Covenant")
+    print(filled)
+
+    -- Build a system message
+    sys = prompts.system("You are a helpful assistant that speaks like a pirate.")
+    print("System message:")
+    print(sys)
+
+    -- Build a user message
+    usr = prompts.user("What is 2 + 2?")
+    print("User message:")
+    print(usr)
+
+    return "prompts OK"
+
+contract test_guardrails() -> String
+  precondition:
+    true
+
+  postcondition:
+    result != ""
+
+  body:
+    -- Validate JSON
+    good_json = "{\"name\": \"Alice\", \"age\": 30}"
+    bad_json = "not json at all"
+
+    valid = guardrails.validate_json(good_json)
+    print("Valid JSON check:")
+    print(valid)
+
+    invalid = guardrails.validate_json(bad_json)
+    print("Invalid JSON check:")
+    print(invalid)
+
+    -- Check PII
+    safe_text = "The weather is nice today"
+    pii_text = "Contact me at alice@example.com or 555-123-4567"
+
+    safe_result = guardrails.check_pii(safe_text)
+    print("PII check (safe):")
+    print(safe_result)
+
+    pii_result = guardrails.check_pii(pii_text)
+    print("PII check (has PII):")
+    print(pii_result)
+
+    -- Check length
+    short = "hi"
+    ok = "this is a fine length string"
+
+    len_check = guardrails.check_length(ok, min: 5, max: 100)
+    print("Length check (ok):")
+    print(len_check)
+
+    -- Sanitize HTML
+    dirty = "Hello <script>alert('xss')</script> world"
+    clean = guardrails.sanitize(dirty)
+    print("Sanitized:")
+    print(clean)
+
+    -- Assert format
+    email_check = guardrails.assert_format("test@example.com", "email")
+    print("Email format check:")
+    print(email_check)
+
+    return "guardrails OK"
+
+contract main() -> Int
+  precondition:
+    true
+
+  postcondition:
+    result == 0
+
+  body:
+    print("=== Covenant AI Toolkit Demo ===")
+    print("")
+
+    print("--- Embeddings ---")
+    e_result = test_embeddings()
+    print(e_result)
+    print("")
+
+    print("--- Prompts ---")
+    p_result = test_prompts()
+    print(p_result)
+    print("")
+
+    print("--- Guardrails ---")
+    g_result = test_guardrails()
+    print(g_result)
+    print("")
+
+    print("=== All tests passed ===")
+    return 0

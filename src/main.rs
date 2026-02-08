@@ -82,6 +82,18 @@ enum Commands {
         /// Path to .cov file
         file: PathBuf,
     },
+    /// Install a package
+    Add {
+        /// Package name
+        name: String,
+        /// Install globally instead of locally
+        #[arg(long)]
+        global: bool,
+    },
+    /// Initialize a new Covenant project
+    Init,
+    /// List installed packages
+    Packages,
 }
 
 fn parse_arg(s: &str) -> Result<(String, String), String> {
@@ -119,6 +131,9 @@ fn main() {
             arg,
         } => cmd_exec(&file, contract.as_deref(), &arg),
         Commands::Disasm { file } => cmd_disasm(&file),
+        Commands::Add { name, global } => cmd_add(&name, global),
+        Commands::Init => cmd_init(),
+        Commands::Packages => cmd_packages(),
     };
     process::exit(exit_code);
 }
@@ -619,6 +634,112 @@ fn json_to_value(json: &serde_json::Value) -> Value {
             Value::Object("Object".to_string(), fields)
         }
     }
+}
+
+fn cmd_add(name: &str, global: bool) -> i32 {
+    use covenant_lang::packages;
+
+    // Check if it's a built-in module
+    if packages::is_builtin_module(name) {
+        println!("'{}' is a built-in module — no installation needed. Just use: {}.method()", name, name);
+        return 0;
+    }
+
+    // Determine install directory
+    let install_dir = if global {
+        match std::env::var("HOME") {
+            Ok(home) => PathBuf::from(home).join(".covenant").join("packages").join(name),
+            Err(_) => {
+                eprintln!("Error: cannot determine home directory");
+                return 1;
+            }
+        }
+    } else {
+        PathBuf::from("covenant_packages").join(name)
+    };
+
+    if install_dir.exists() {
+        println!("Package '{}' already installed at {}", name, install_dir.display());
+        return 0;
+    }
+
+    // Create package directory with a starter mod.cov
+    if let Err(e) = std::fs::create_dir_all(&install_dir) {
+        eprintln!("Error creating {}: {}", install_dir.display(), e);
+        return 1;
+    }
+
+    let mod_template = format!(
+        r#"-- {} package for Covenant
+intent: "Package: {}"
+scope: packages.{}
+risk: low
+
+contract hello() -> String
+  precondition:
+    true
+
+  postcondition:
+    result != ""
+
+  body:
+    return "Hello from {} package!"
+"#,
+        name, name, name, name
+    );
+
+    let mod_path = install_dir.join("mod.cov");
+    if let Err(e) = std::fs::write(&mod_path, mod_template) {
+        eprintln!("Error writing {}: {}", mod_path.display(), e);
+        return 1;
+    }
+
+    println!("Installed package '{}' at {}", name, install_dir.display());
+    println!("Edit {} to add contracts", mod_path.display());
+    0
+}
+
+fn cmd_init() -> i32 {
+    use covenant_lang::packages;
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match packages::init_project(&cwd) {
+        Ok(_) => {
+            println!("Initialized Covenant project in {}", cwd.display());
+            if cwd.join("main.cov").exists() {
+                println!("Created main.cov — run with: covenant run main.cov -c main");
+            }
+            println!("Created covenant_packages/ for local packages");
+            0
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            1
+        }
+    }
+}
+
+fn cmd_packages() -> i32 {
+    use covenant_lang::packages;
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    println!("Built-in modules (always available):");
+    println!("  Tier 1: web, data, json, file, ai, crypto, time, math, text, env");
+    println!("  Tier 2: http, anthropic, openai, ollama, grok, mcp, mcpx, embeddings, prompts, guardrails");
+    println!();
+
+    let installed = packages::list_packages(&cwd);
+    if installed.is_empty() {
+        println!("No file-based packages installed.");
+    } else {
+        println!("Installed packages:");
+        for (name, path) in &installed {
+            println!("  {} ({})", name, path.display());
+        }
+    }
+
+    0
 }
 
 fn print_program(program: &Program) {

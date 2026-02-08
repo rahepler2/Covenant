@@ -95,6 +95,8 @@ pub enum TokenType {
 
     // Special
     Old,
+    Use,
+    As,
 
     // Keywords — audit
     Show,
@@ -140,6 +142,7 @@ impl TokenType {
                 | TokenType::Postcondition
                 | TokenType::Permissions
                 | TokenType::Has
+                | TokenType::As
         )
     }
 }
@@ -190,6 +193,8 @@ pub fn keyword_type(word: &str) -> Option<TokenType> {
         "high" => Some(TokenType::High),
         "critical" => Some(TokenType::Critical),
         "old" => Some(TokenType::Old),
+        "use" => Some(TokenType::Use),
+        "as" => Some(TokenType::As),
         "true" => Some(TokenType::True),
         "false" => Some(TokenType::False),
         "show" => Some(TokenType::Show),

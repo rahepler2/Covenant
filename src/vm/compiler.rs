@@ -206,7 +206,9 @@ impl<'a> ContractCompiler<'a> {
     }
 
     fn is_stdlib_module(name: &str) -> bool {
-        matches!(name, "web" | "data" | "json" | "file" | "ai" | "crypto" | "time" | "math" | "text" | "env")
+        matches!(name, "web" | "data" | "json" | "file" | "ai" | "crypto" | "time" | "math" | "text" | "env"
+            | "http" | "anthropic" | "openai" | "ollama" | "grok" | "mcp" | "mcpx"
+            | "embeddings" | "prompts" | "guardrails")
     }
 
     fn is_builtin(name: &str) -> bool {

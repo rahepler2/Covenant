@@ -64,9 +64,20 @@ impl Parser {
 
     pub fn parse(&mut self) -> Result<Program, ParseError> {
         let header = self.parse_file_header()?;
+        let mut uses = Vec::new();
         let mut contracts = Vec::new();
         let mut type_defs = Vec::new();
         let mut shared_decls = Vec::new();
+
+        // Parse `use` declarations (between header and contracts)
+        loop {
+            self.skip_newlines();
+            if self.check(TokenType::Use) {
+                uses.push(self.parse_use_decl()?);
+            } else {
+                break;
+            }
+        }
 
         loop {
             self.skip_newlines();
@@ -86,7 +97,7 @@ impl Parser {
                 let cur = self.current();
                 return Err(ParseError {
                     message: format!(
-                        "Expected 'contract', 'type', or 'shared' at top level, got {:?}",
+                        "Expected 'contract', 'type', 'shared', or 'use' at top level, got {:?}",
                         cur.token_type
                     ),
                     line: cur.line,
@@ -99,10 +110,26 @@ impl Parser {
         Ok(Program {
             loc: self.loc(),
             header,
+            uses,
             contracts,
             type_defs,
             shared_decls,
         })
+    }
+
+    // ── Use declarations ────────────────────────────────────────────────
+
+    fn parse_use_decl(&mut self) -> Result<UseDecl, ParseError> {
+        let loc = self.loc();
+        self.expect(TokenType::Use)?;
+        let name = self.expect_identifier_or_keyword()?.value.clone();
+        let alias = if self.check(TokenType::As) {
+            self.advance();
+            Some(self.expect_identifier_or_keyword()?.value.clone())
+        } else {
+            None
+        };
+        Ok(UseDecl { name, alias, loc })
     }
 
     // ── File header ─────────────────────────────────────────────────────
