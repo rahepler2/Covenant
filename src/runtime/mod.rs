@@ -106,11 +106,15 @@ enum StmtResult {
     Return(Value),
 }
 
+const MAX_CALL_DEPTH: usize = 256;
+const MAX_RANGE_SIZE: i64 = 10_000_000;
+
 pub struct Interpreter {
     scopes: Vec<HashMap<String, Value>>,
     contracts: HashMap<String, ContractDef>,
     events: Vec<(String, Vec<Value>)>,
     old_snapshot: Option<HashMap<String, Value>>,
+    call_depth: usize,
 }
 
 impl Interpreter {
@@ -120,6 +124,7 @@ impl Interpreter {
             contracts: HashMap::new(),
             events: Vec::new(),
             old_snapshot: None,
+            call_depth: 0,
         }
     }
 
@@ -134,6 +139,16 @@ impl Interpreter {
         contract_name: &str,
         args: HashMap<String, Value>,
     ) -> Result<Value, RuntimeError> {
+        if self.call_depth >= MAX_CALL_DEPTH {
+            return Err(RuntimeError {
+                message: format!(
+                    "Maximum call depth ({}) exceeded — possible infinite recursion",
+                    MAX_CALL_DEPTH
+                ),
+            });
+        }
+        self.call_depth += 1;
+
         let contract = self.contracts.get(contract_name).cloned().ok_or_else(|| {
             RuntimeError {
                 message: format!("Contract '{}' not found", contract_name),
@@ -152,6 +167,7 @@ impl Interpreter {
             for (i, condition) in precondition.conditions.iter().enumerate() {
                 let result = self.eval_expr(condition)?;
                 if !result.is_truthy() {
+                    self.call_depth -= 1;
                     self.scopes.pop();
                     return Err(RuntimeError {
                         message: format!(
@@ -187,6 +203,7 @@ impl Interpreter {
                 let result = self.eval_expr(condition)?;
                 if !result.is_truthy() {
                     self.old_snapshot = None;
+                    self.call_depth -= 1;
                     self.scopes.pop();
                     return Err(RuntimeError {
                         message: format!(
@@ -200,6 +217,7 @@ impl Interpreter {
         }
 
         self.old_snapshot = None;
+        self.call_depth -= 1;
         self.scopes.pop();
         Ok(return_value)
     }
@@ -356,7 +374,9 @@ impl Interpreter {
                 let val = self.eval_expr(operand)?;
                 match op.as_str() {
                     "-" => match val {
-                        Value::Int(n) => Ok(Value::Int(-n)),
+                        Value::Int(n) => n.checked_neg().map(Value::Int).ok_or_else(|| RuntimeError {
+                            message: "Integer overflow in negation".to_string(),
+                        }),
                         Value::Float(n) => Ok(Value::Float(-n)),
                         _ => Err(RuntimeError {
                             message: format!("Cannot negate {}", val.type_name()),
@@ -431,7 +451,9 @@ impl Interpreter {
                     "abs" => {
                         if let Some(val) = args.first() {
                             match val {
-                                Value::Int(n) => Ok(Value::Int(n.abs())),
+                                Value::Int(n) => n.checked_abs().map(Value::Int).ok_or_else(|| RuntimeError {
+                                    message: "Integer overflow in abs()".to_string(),
+                                }),
                                 Value::Float(n) => Ok(Value::Float(n.abs())),
                                 _ => Err(RuntimeError {
                                     message: format!("abs() not supported for {}", val.type_name()),
@@ -483,6 +505,19 @@ impl Interpreter {
                                     })
                                 }
                             };
+                            if n < 0 {
+                                return Err(RuntimeError {
+                                    message: "range() requires a non-negative integer".to_string(),
+                                });
+                            }
+                            if n > MAX_RANGE_SIZE {
+                                return Err(RuntimeError {
+                                    message: format!(
+                                        "range({}) exceeds maximum size of {}",
+                                        n, MAX_RANGE_SIZE
+                                    ),
+                                });
+                            }
                             Ok(Value::List((0..n).map(Value::Int).collect()))
                         } else {
                             Err(RuntimeError {
@@ -652,16 +687,24 @@ impl Interpreter {
     fn eval_binop(&self, left: &Value, op: &str, right: &Value) -> Result<Value, RuntimeError> {
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => match op {
-                "+" => Ok(Value::Int(a + b)),
-                "-" => Ok(Value::Int(a - b)),
-                "*" => Ok(Value::Int(a * b)),
+                "+" => a.checked_add(*b).map(Value::Int).ok_or_else(|| RuntimeError {
+                    message: "Integer overflow in addition".to_string(),
+                }),
+                "-" => a.checked_sub(*b).map(Value::Int).ok_or_else(|| RuntimeError {
+                    message: "Integer overflow in subtraction".to_string(),
+                }),
+                "*" => a.checked_mul(*b).map(Value::Int).ok_or_else(|| RuntimeError {
+                    message: "Integer overflow in multiplication".to_string(),
+                }),
                 "/" => {
                     if *b == 0 {
                         Err(RuntimeError {
                             message: "Division by zero".to_string(),
                         })
                     } else if a % b == 0 {
-                        Ok(Value::Int(a / b))
+                        a.checked_div(*b).map(Value::Int).ok_or_else(|| RuntimeError {
+                            message: "Integer overflow in division".to_string(),
+                        })
                     } else {
                         Ok(Value::Float(*a as f64 / *b as f64))
                     }
@@ -813,9 +856,11 @@ impl Interpreter {
 
         // Rebuild the object chain from inside out
         let mut current = obj;
-        for (_name, parent) in obj_stack.iter().rev().skip(1) {
-            if let Value::Object(type_name, mut fields) = parent.clone() {
-                fields.insert(obj_stack.last().unwrap().0.clone(), current);
+        let stack_len = obj_stack.len();
+        for i in (0..stack_len - 1).rev() {
+            let child_key = &obj_stack[i + 1].0;
+            if let Value::Object(type_name, mut fields) = obj_stack[i].1.clone() {
+                fields.insert(child_key.clone(), current);
                 current = Value::Object(type_name, fields);
             }
         }

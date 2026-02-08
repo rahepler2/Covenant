@@ -79,8 +79,30 @@ fn main() {
     process::exit(exit_code);
 }
 
+const MAX_SOURCE_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
+
 fn read_source(path: &PathBuf) -> Result<(String, String), i32> {
     let filename = path.to_string_lossy().to_string();
+
+    // Check file size before reading
+    match std::fs::metadata(path) {
+        Ok(meta) => {
+            if meta.len() > MAX_SOURCE_SIZE {
+                eprintln!(
+                    "Error: file {} is too large ({} bytes, max {} bytes)",
+                    filename,
+                    meta.len(),
+                    MAX_SOURCE_SIZE
+                );
+                return Err(1);
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: cannot read file {}: {}", filename, e);
+            return Err(1);
+        }
+    }
+
     match std::fs::read_to_string(path) {
         Ok(source) => Ok((source, filename)),
         Err(e) => {

@@ -293,11 +293,32 @@ impl Lexer {
 
     fn scan_number(&mut self) -> Result<(), LexerError> {
         let start_col = self.column;
+        let start_line = self.line;
         let mut num_chars = String::new();
+        let mut dot_count = 0;
 
         while !self.at_end() && (self.peek().is_ascii_digit() || self.peek() == '.') {
+            if self.peek() == '.' {
+                dot_count += 1;
+                if dot_count > 1 {
+                    break; // Stop before second dot — treat it as field access
+                }
+                // Only consume dot if followed by a digit (otherwise it's field access like `1.method()`)
+                if self.peek_ahead(1).map_or(true, |c| !c.is_ascii_digit()) {
+                    break;
+                }
+            }
             num_chars.push(self.peek());
             self.advance();
+        }
+
+        if num_chars.is_empty() {
+            return Err(LexerError {
+                message: "Invalid number literal".to_string(),
+                line: start_line,
+                column: start_col,
+                file: self.filename.clone(),
+            });
         }
 
         let tt = if num_chars.contains('.') {

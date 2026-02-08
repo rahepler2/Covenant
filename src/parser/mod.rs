@@ -18,11 +18,14 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
+const MAX_PARSER_DEPTH: usize = 256;
+
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     #[allow(dead_code)]
     filename: String,
+    depth: usize,
 }
 
 impl Parser {
@@ -31,7 +34,30 @@ impl Parser {
             tokens,
             pos: 0,
             filename: filename.to_string(),
+            depth: 0,
         }
+    }
+
+    fn enter_depth(&mut self) -> Result<(), ParseError> {
+        self.depth += 1;
+        if self.depth > MAX_PARSER_DEPTH {
+            let tok = self.current();
+            Err(ParseError {
+                message: format!(
+                    "Maximum nesting depth ({}) exceeded — expression is too deeply nested",
+                    MAX_PARSER_DEPTH
+                ),
+                line: tok.line,
+                column: tok.column,
+                file: tok.file.clone(),
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    fn exit_depth(&mut self) {
+        self.depth -= 1;
     }
 
     // ── Public API ──────────────────────────────────────────────────────
@@ -594,7 +620,10 @@ impl Parser {
     // ── Expressions (precedence climbing) ───────────────────────────────
 
     fn parse_expression(&mut self) -> Result<Expr, ParseError> {
-        self.parse_or_expr()
+        self.enter_depth()?;
+        let result = self.parse_or_expr();
+        self.exit_depth();
+        result
     }
 
     fn parse_or_expr(&mut self) -> Result<Expr, ParseError> {
