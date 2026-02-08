@@ -835,6 +835,17 @@ impl Parser {
                     arguments: args,
                     keyword_args: kwargs,
                 };
+            } else if self.check(TokenType::LBracket) {
+                // Index access: expr[index]
+                self.advance();
+                let index = self.parse_expression()?;
+                self.expect(TokenType::RBracket)?;
+                let loc = expr.loc().clone();
+                expr = Expr::IndexAccess {
+                    loc,
+                    object: Box::new(expr),
+                    index: Box::new(index),
+                };
             } else {
                 break;
             }
@@ -930,15 +941,19 @@ impl Parser {
     fn parse_list_literal(&mut self) -> Result<Expr, ParseError> {
         let loc = self.loc();
         self.expect(TokenType::LBracket)?;
+        self.skip_expression_ws();
         let mut elements = Vec::new();
         if !self.check(TokenType::RBracket) {
             elements.push(self.parse_expression()?);
+            self.skip_expression_ws();
             while self.check(TokenType::Comma) {
                 self.advance();
+                self.skip_expression_ws();
                 if self.check(TokenType::RBracket) {
                     break;
                 }
                 elements.push(self.parse_expression()?);
+                self.skip_expression_ws();
             }
         }
         self.expect(TokenType::RBracket)?;
@@ -949,14 +964,18 @@ impl Parser {
         let mut args = Vec::new();
         let mut kwargs = Vec::new();
 
+        self.skip_expression_ws();
         if !self.check(TokenType::RParen) {
             self.parse_single_argument(&mut args, &mut kwargs)?;
+            self.skip_expression_ws();
             while self.check(TokenType::Comma) {
                 self.advance();
+                self.skip_expression_ws();
                 if self.check(TokenType::RParen) {
                     break;
                 }
                 self.parse_single_argument(&mut args, &mut kwargs)?;
+                self.skip_expression_ws();
             }
         }
 
@@ -1356,6 +1375,17 @@ impl Parser {
 
     fn skip_newlines(&mut self) {
         while self.check(TokenType::Newline) {
+            self.advance();
+        }
+    }
+
+    /// Skip newlines, indents, and dedents inside multi-line expressions
+    /// (parenthesized calls and list literals)
+    fn skip_expression_ws(&mut self) {
+        while self.check(TokenType::Newline)
+            || self.check(TokenType::Indent)
+            || self.check(TokenType::Dedent)
+        {
             self.advance();
         }
     }

@@ -504,6 +504,11 @@ impl<'a> FlowTracker<'a> {
                 }
                 labels
             }
+            Expr::IndexAccess { object, index, .. } => {
+                let mut labels = self.compute_labels(object);
+                labels.extend(self.compute_labels(index));
+                labels
+            }
             Expr::HasExpr { .. }
             | Expr::StringLiteral { .. }
             | Expr::NumberLiteral { .. }
