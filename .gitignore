@@ -46,3 +46,4 @@ Cargo.lock
 *.cov.bin
 .covenant_cache/
 audit_logs/
+*.covc
