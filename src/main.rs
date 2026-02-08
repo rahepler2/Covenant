@@ -11,6 +11,9 @@ use covenant_lang::runtime::{Interpreter, Value};
 use covenant_lang::verify::checker::{verify_program, Severity};
 use covenant_lang::verify::fingerprint::fingerprint_contract;
 use covenant_lang::verify::hasher::compute_intent_hash;
+use covenant_lang::vm::compiler::Compiler as BytecodeCompiler;
+use covenant_lang::vm::bytecode::Module as BytecodeModule;
+use covenant_lang::vm::machine::VM;
 
 #[derive(ClapParser)]
 #[command(name = "covenant", version, about = "The Covenant programming language compiler")]
@@ -41,7 +44,7 @@ enum Commands {
         /// Path to .cov file
         file: PathBuf,
     },
-    /// Execute a contract
+    /// Execute a contract (via bytecode VM)
     Run {
         /// Path to .cov file
         file: PathBuf,
@@ -51,6 +54,33 @@ enum Commands {
         /// Arguments as key=value pairs
         #[arg(short, long, value_parser = parse_arg)]
         arg: Vec<(String, String)>,
+        /// Use tree-walking interpreter instead of VM
+        #[arg(long)]
+        interpret: bool,
+    },
+    /// Compile .cov to bytecode (.covc)
+    Build {
+        /// Path to .cov file
+        file: PathBuf,
+        /// Output path (defaults to <input>.covc)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Execute pre-compiled bytecode (.covc)
+    Exec {
+        /// Path to .covc file
+        file: PathBuf,
+        /// Contract name to execute (defaults to first contract)
+        #[arg(short, long)]
+        contract: Option<String>,
+        /// Arguments as key=value pairs
+        #[arg(short, long, value_parser = parse_arg)]
+        arg: Vec<(String, String)>,
+    },
+    /// Disassemble a .cov file (show bytecode)
+    Disasm {
+        /// Path to .cov file
+        file: PathBuf,
     },
 }
 
@@ -74,7 +104,21 @@ fn main() {
             file,
             contract,
             arg,
-        } => cmd_run(&file, contract.as_deref(), &arg),
+            interpret,
+        } => {
+            if interpret {
+                cmd_run_interpret(&file, contract.as_deref(), &arg)
+            } else {
+                cmd_run(&file, contract.as_deref(), &arg)
+            }
+        }
+        Commands::Build { file, output } => cmd_build(&file, output.as_deref()),
+        Commands::Exec {
+            file,
+            contract,
+            arg,
+        } => cmd_exec(&file, contract.as_deref(), &arg),
+        Commands::Disasm { file } => cmd_disasm(&file),
     };
     process::exit(exit_code);
 }
@@ -334,19 +378,20 @@ fn cmd_run(path: &PathBuf, contract_name: Option<&str>, args: &[(String, String)
         arg_values.insert(key.clone(), parse_value(val));
     }
 
-    let mut interpreter = Interpreter::new();
-    interpreter.register_contracts(&program);
+    // Compile to bytecode then execute on VM
+    let mut compiler = BytecodeCompiler::new();
+    let module = compiler.compile(&program);
+    let mut vm = VM::new(module);
 
-    match interpreter.run_contract(&target_name, arg_values) {
+    match vm.run_contract(&target_name, arg_values) {
         Ok(result) => {
             println!("{}", result);
 
-            // Print emitted events
-            let events = interpreter.emitted_events();
+            let events = vm.emitted_events();
             if !events.is_empty() {
                 println!("\nEmitted events:");
-                for (name, args) in events {
-                    let args_str: Vec<String> = args.iter().map(|v| format!("{}", v)).collect();
+                for (name, event_args) in events {
+                    let args_str: Vec<String> = event_args.iter().map(|v| format!("{}", v)).collect();
                     println!("  {} ({})", name, args_str.join(", "));
                 }
             }
@@ -357,6 +402,172 @@ fn cmd_run(path: &PathBuf, contract_name: Option<&str>, args: &[(String, String)
             1
         }
     }
+}
+
+fn cmd_run_interpret(path: &PathBuf, contract_name: Option<&str>, args: &[(String, String)]) -> i32 {
+    let (program, _) = match lex_and_parse(path) {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+
+    if program.contracts.is_empty() {
+        eprintln!("Error: no contracts found in file");
+        return 1;
+    }
+
+    let target_name = match contract_name {
+        Some(name) => name.to_string(),
+        None => program.contracts[0].name.clone(),
+    };
+
+    let mut arg_values: HashMap<String, Value> = HashMap::new();
+    for (key, val) in args {
+        arg_values.insert(key.clone(), parse_value(val));
+    }
+
+    let mut interpreter = Interpreter::new();
+    interpreter.register_contracts(&program);
+
+    match interpreter.run_contract(&target_name, arg_values) {
+        Ok(result) => {
+            println!("{}", result);
+
+            let events = interpreter.emitted_events();
+            if !events.is_empty() {
+                println!("\nEmitted events:");
+                for (name, event_args) in events {
+                    let args_str: Vec<String> = event_args.iter().map(|v| format!("{}", v)).collect();
+                    println!("  {} ({})", name, args_str.join(", "));
+                }
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("{}", e);
+            1
+        }
+    }
+}
+
+fn cmd_build(path: &PathBuf, output: Option<&std::path::Path>) -> i32 {
+    let (program, _) = match lex_and_parse(path) {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+
+    let mut compiler = BytecodeCompiler::new();
+    let module = compiler.compile(&program);
+    let bytes = module.serialize();
+
+    let out_path = match output {
+        Some(p) => p.to_path_buf(),
+        None => path.with_extension("covc"),
+    };
+
+    match std::fs::write(&out_path, &bytes) {
+        Ok(_) => {
+            println!(
+                "Compiled {} -> {} ({} bytes, {} contracts)",
+                path.display(),
+                out_path.display(),
+                bytes.len(),
+                module.contracts.len()
+            );
+            0
+        }
+        Err(e) => {
+            eprintln!("Error writing {}: {}", out_path.display(), e);
+            1
+        }
+    }
+}
+
+fn cmd_exec(path: &PathBuf, contract_name: Option<&str>, args: &[(String, String)]) -> i32 {
+    let data = match std::fs::read(path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("Error reading {}: {}", path.display(), e);
+            return 1;
+        }
+    };
+
+    let module = match BytecodeModule::deserialize(&data) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("Error loading bytecode: {}", e);
+            return 1;
+        }
+    };
+
+    if module.contracts.is_empty() {
+        eprintln!("Error: no contracts found in bytecode");
+        return 1;
+    }
+
+    let target_name = match contract_name {
+        Some(name) => name.to_string(),
+        None => module.contracts[0].name.clone(),
+    };
+
+    let mut arg_values: HashMap<String, Value> = HashMap::new();
+    for (key, val) in args {
+        arg_values.insert(key.clone(), parse_value(val));
+    }
+
+    let mut vm = VM::new(module);
+
+    match vm.run_contract(&target_name, arg_values) {
+        Ok(result) => {
+            println!("{}", result);
+
+            let events = vm.emitted_events();
+            if !events.is_empty() {
+                println!("\nEmitted events:");
+                for (name, event_args) in events {
+                    let args_str: Vec<String> = event_args.iter().map(|v| format!("{}", v)).collect();
+                    println!("  {} ({})", name, args_str.join(", "));
+                }
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("{}", e);
+            1
+        }
+    }
+}
+
+fn cmd_disasm(path: &PathBuf) -> i32 {
+    let (program, _) = match lex_and_parse(path) {
+        Ok(r) => r,
+        Err(code) => return code,
+    };
+
+    let mut compiler = BytecodeCompiler::new();
+    let module = compiler.compile(&program);
+
+    println!("=== Constants ({}) ===", module.constants.len());
+    for (i, c) in module.constants.iter().enumerate() {
+        println!("  c{}: {}", i, c);
+    }
+
+    println!();
+    for contract in &module.contracts {
+        println!(
+            "=== {} ({} locals, {} instructions) ===",
+            contract.name,
+            contract.local_count,
+            contract.code.len()
+        );
+        println!("  params: {:?}", contract.params);
+        println!("  locals: {:?}", contract.local_names);
+        println!();
+        for (i, inst) in contract.code.iter().enumerate() {
+            println!("  {:4}: {}", i, inst);
+        }
+        println!();
+    }
+    0
 }
 
 fn parse_value(s: &str) -> Value {
