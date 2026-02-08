@@ -1,7 +1,9 @@
 //! Covenant Standard Library
 //!
-//! Modules: web, data, json, file, ai, crypto, time, math, text, env
+//! Tier 1 (core): web, data, json, file, ai, crypto, time, math, text, env
+//! Tier 2 (AI-age): http, anthropic, openai, ollama, grok, mcp, mcpx, embeddings, prompts, guardrails
 
+// Tier 1 — core stdlib
 pub mod web;
 pub mod data;
 pub mod json_mod;
@@ -13,11 +15,27 @@ pub mod math;
 pub mod text;
 pub mod env;
 
+// Tier 2 — AI-age libraries
+pub mod http_client;
+pub mod anthropic;
+pub mod openai_mod;
+pub mod ollama;
+pub mod grok;
+pub mod mcp_mod;
+pub mod mcpx;
+pub mod embeddings;
+pub mod prompts;
+pub mod guardrails;
+
 use super::{Value, RuntimeError};
 use std::collections::HashMap;
 
 const STDLIB_MODULES: &[&str] = &[
+    // Tier 1
     "web", "data", "json", "file", "ai", "crypto", "time", "math", "text", "env",
+    // Tier 2
+    "http", "anthropic", "openai", "ollama", "grok", "mcp", "mcpx",
+    "embeddings", "prompts", "guardrails",
 ];
 
 /// Check if a name refers to a stdlib module
@@ -33,6 +51,7 @@ pub fn call_module_method(
     kwargs: HashMap<String, Value>,
 ) -> Result<Value, RuntimeError> {
     match module {
+        // Tier 1
         "web" => web::call(method, args, kwargs),
         "data" => data::call(method, args, kwargs),
         "json" => json_mod::call(method, args, kwargs),
@@ -43,8 +62,19 @@ pub fn call_module_method(
         "math" => math::call(method, args, kwargs),
         "text" => text::call(method, args, kwargs),
         "env" => env::call(method, args, kwargs),
+        // Tier 2
+        "http" => http_client::call(method, args, kwargs),
+        "anthropic" => anthropic::call(method, args, kwargs),
+        "openai" => openai_mod::call(method, args, kwargs),
+        "ollama" => ollama::call(method, args, kwargs),
+        "grok" => grok::call(method, args, kwargs),
+        "mcp" => mcp_mod::call(method, args, kwargs),
+        "mcpx" => mcpx::call(method, args, kwargs),
+        "embeddings" => embeddings::call(method, args, kwargs),
+        "prompts" => prompts::call(method, args, kwargs),
+        "guardrails" => guardrails::call(method, args, kwargs),
         _ => Err(RuntimeError {
-            message: format!("Unknown stdlib module: {}", module),
+            message: format!("Unknown module: {}", module),
         }),
     }
 }

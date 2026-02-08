@@ -401,11 +401,21 @@ pub struct FileHeader {
     pub loc: SourceLocation,
 }
 
+// ── Use declarations ────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct UseDecl {
+    pub name: String,
+    pub alias: Option<String>,
+    pub loc: SourceLocation,
+}
+
 // ── Top-level program ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct Program {
     pub header: Option<FileHeader>,
+    pub uses: Vec<UseDecl>,
     pub contracts: Vec<ContractDef>,
     pub type_defs: Vec<TypeDef>,
     pub shared_decls: Vec<SharedDecl>,
