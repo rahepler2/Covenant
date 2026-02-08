@@ -1,0 +1,230 @@
+-- Standard Library Demo
+-- Demonstrates: math, text, json, crypto, time, data, file, env
+
+intent: "Demonstrate Covenant standard library capabilities"
+scope: demo.stdlib
+risk: low
+
+contract math_demo() -> Float
+  precondition:
+    true
+
+  postcondition:
+    result > 0
+
+  effects:
+    touches_nothing_else
+
+  body:
+    pi = math.pi()
+    e = math.e()
+    print("=== Math Module ===")
+    print("pi =", pi)
+    print("e =", e)
+    print("sqrt(144) =", math.sqrt(144))
+    print("pow(2, 10) =", math.pow(2, 10))
+    print("floor(3.7) =", math.floor(3.7))
+    print("ceil(3.2) =", math.ceil(3.2))
+    print("round(3.5) =", math.round(3.5))
+    print("sin(0) =", math.sin(0))
+    print("log(1) =", math.log(1))
+    return pi
+
+contract text_demo() -> String
+  precondition:
+    true
+
+  postcondition:
+    result != ""
+
+  effects:
+    touches_nothing_else
+
+  body:
+    print("")
+    print("=== Text Module ===")
+    hello = "Hello, Covenant World!"
+    print("Original:", hello)
+    print("Upper:", text.upper(hello))
+    print("Lower:", text.lower(hello))
+    print("Length:", text.length(hello))
+    words = text.split(hello, " ")
+    print("Words:", words)
+    joined = text.join("-", words)
+    print("Joined:", joined)
+    print("Starts with Hello:", text.starts_with(hello, "Hello"))
+    print("Contains 'World':", text.contains(hello, "World"))
+    replaced = text.replace(hello, "World", "Universe")
+    print("Replaced:", replaced)
+    print("Matches email:", text.matches("user@test.com", "\\w+@\\w+\\.\\w+"))
+    return replaced
+
+contract json_demo() -> String
+  precondition:
+    true
+
+  postcondition:
+    result != ""
+
+  effects:
+    touches_nothing_else
+
+  body:
+    print("")
+    print("=== JSON Module ===")
+    data = json.parse("{\"name\": \"Covenant\", \"version\": 1, \"active\": true}")
+    print("Parsed:", data)
+    print("Name:", data.name)
+    print("Version:", data.version)
+    stringified = json.stringify(data)
+    print("Stringified:", stringified)
+    return stringified
+
+contract crypto_demo() -> String
+  precondition:
+    true
+
+  postcondition:
+    result != ""
+
+  effects:
+    touches_nothing_else
+
+  body:
+    print("")
+    print("=== Crypto Module ===")
+    hash = crypto.sha256("Hello, Covenant!")
+    print("SHA-256 of 'Hello, Covenant!':", hash)
+    hmac_result = crypto.hmac("secret-key", "important message")
+    print("HMAC-SHA256:", hmac_result)
+    return hash
+
+contract time_demo() -> Float
+  precondition:
+    true
+
+  postcondition:
+    result > 0
+
+  effects:
+    touches_nothing_else
+
+  body:
+    print("")
+    print("=== Time Module ===")
+    start = time.now()
+    print("Current timestamp:", start)
+    formatted = time.format(start)
+    print("Formatted:", formatted)
+    ts = time.timestamp()
+    print("Unix timestamp:", ts)
+    return start
+
+contract data_demo() -> Int
+  precondition:
+    true
+
+  postcondition:
+    result > 0
+
+  effects:
+    touches_nothing_else
+
+  body:
+    print("")
+    print("=== Data Module ===")
+    df = data.frame(columns: ["name", "age", "score"], rows: [["Alice", 30, 95], ["Bob", 25, 87], ["Carol", 35, 92], ["Dave", 28, 78], ["Eve", 32, 91]])
+    print("DataFrame:")
+    df.show()
+    print("")
+
+    count = df.count()
+    print("Row count:", count)
+
+    avg_age = df.mean("age")
+    print("Average age:", avg_age)
+
+    total_score = df.sum("score")
+    print("Total score:", total_score)
+
+    sorted = df.sort_by("score", "desc")
+    print("")
+    print("Sorted by score (desc):")
+    sorted.show()
+
+    filtered = df.filter("age", ">", 29)
+    print("")
+    print("Filtered age > 29:")
+    filtered.show()
+
+    return count
+
+contract file_demo() -> Bool
+  precondition:
+    true
+
+  postcondition:
+    result == true
+
+  effects:
+    touches_nothing_else
+
+  body:
+    print("")
+    print("=== File Module ===")
+    file.write("/tmp/covenant_test.txt", "Hello from Covenant!\nLine 2\nLine 3")
+    print("File written to /tmp/covenant_test.txt")
+    content = file.read("/tmp/covenant_test.txt")
+    print("Read back:", content)
+    exists = file.exists("/tmp/covenant_test.txt")
+    print("File exists:", exists)
+    lines = file.lines("/tmp/covenant_test.txt")
+    print("Lines:", lines)
+    file.delete("/tmp/covenant_test.txt")
+    print("File deleted")
+    return exists
+
+contract env_demo() -> String
+  precondition:
+    true
+
+  postcondition:
+    result != ""
+
+  effects:
+    touches_nothing_else
+
+  body:
+    print("")
+    print("=== Env Module ===")
+    home = env.get("HOME", "unknown")
+    print("HOME:", home)
+    has_home = env.has("HOME")
+    print("Has HOME:", has_home)
+    env.set("COVENANT_TEST", "hello")
+    test_val = env.get("COVENANT_TEST")
+    print("COVENANT_TEST:", test_val)
+    return home
+
+contract main() -> Int
+  precondition:
+    true
+
+  postcondition:
+    result == 0
+
+  effects:
+    touches_nothing_else
+
+  body:
+    math_demo()
+    text_demo()
+    json_demo()
+    crypto_demo()
+    time_demo()
+    data_demo()
+    file_demo()
+    env_demo()
+    print("")
+    print("=== All stdlib demos passed! ===")
+    return 0

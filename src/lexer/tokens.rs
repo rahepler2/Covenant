@@ -139,6 +139,7 @@ impl TokenType {
                 | TokenType::Precondition
                 | TokenType::Postcondition
                 | TokenType::Permissions
+                | TokenType::Has
         )
     }
 }

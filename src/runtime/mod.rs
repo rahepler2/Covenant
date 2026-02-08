@@ -1,3 +1,5 @@
+pub mod stdlib;
+
 use std::collections::HashMap;
 use std::fmt;
 
@@ -564,8 +566,21 @@ impl Interpreter {
                 keyword_args,
                 ..
             } => {
-                // Check for static method / constructor pattern: TypeName.method(args)
+                // Check for stdlib module call: web.get(), data.frame(), etc.
                 let obj_name = self.extract_call_name_from_expr(object);
+                if stdlib::is_stdlib_module(&obj_name) {
+                    let args: Vec<Value> = arguments
+                        .iter()
+                        .map(|a| self.eval_expr(a))
+                        .collect::<Result<_, _>>()?;
+                    let mut kwarg_map = HashMap::new();
+                    for (k, v) in keyword_args {
+                        kwarg_map.insert(k.clone(), self.eval_expr(v)?);
+                    }
+                    return stdlib::call_module_method(&obj_name, method, args, kwarg_map);
+                }
+
+                // Check for static method / constructor pattern: TypeName.method(args)
                 if obj_name.chars().next().map_or(false, |c| c.is_uppercase()) {
                     // Static constructor call, e.g. TransferResult.success(...)
                     let mut fields = HashMap::new();
@@ -624,9 +639,15 @@ impl Interpreter {
                             })
                         }
                     }
-                    (Value::Object(_, fields), _) => {
-                        // Method on object: look up as field, if it's callable treat it as such
-                        // For now, create a derived object representing the method result
+                    (Value::Object(type_name, fields), _) => {
+                        // Check for stdlib type methods (DataFrame, HttpResponse)
+                        if stdlib::is_stdlib_type(type_name) {
+                            return stdlib::call_type_method(
+                                type_name, fields, method, args, kwarg_map,
+                            );
+                        }
+
+                        // Generic object method: create a derived object
                         let mut result_fields = HashMap::new();
                         result_fields
                             .insert("_source".to_string(), Value::Str(method.to_string()));
@@ -636,7 +657,6 @@ impl Interpreter {
                         for (k, v) in kwarg_map {
                             result_fields.insert(k, v);
                         }
-                        // Copy fields from the object
                         for (k, v) in fields {
                             if !result_fields.contains_key(k) {
                                 result_fields.insert(k.clone(), v.clone());
