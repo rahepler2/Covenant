@@ -1,20 +1,23 @@
 """Covenant compiler CLI entry point.
 
 Usage:
-    covenant parse <file.cov>       Parse and display the AST
-    covenant check <file.cov>       Run Stage 1 verification (parse + intent check)
-    covenant tokenize <file.cov>    Display the token stream (debug)
+    covenant parse <file.cov>           Parse and display the AST
+    covenant check <file.cov>           Run Stage 1 verification (intent + effects)
+    covenant fingerprint <file.cov>     Show behavioral fingerprints for all contracts
+    covenant tokenize <file.cov>        Display the token stream (debug)
 """
 
 from __future__ import annotations
 
 import json
 import sys
-from dataclasses import asdict
 from pathlib import Path
 
 from covenant.lexer.lexer import Lexer, LexerError
 from covenant.parser.parser import Parser, ParseError
+from covenant.verify.checker import Severity, verify_program
+from covenant.verify.fingerprint import fingerprint_contract
+from covenant.verify.hasher import compute_intent_hash
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_parse(source, filename)
     elif command == "check":
         return _cmd_check(source, filename)
+    elif command == "fingerprint":
+        return _cmd_fingerprint(source, filename)
     else:
         print(f"Error: unknown command '{command}'")
         print(__doc__.strip())
@@ -86,7 +91,7 @@ def _cmd_parse(source: str, filename: str) -> int:
 
 
 def _cmd_check(source: str, filename: str) -> int:
-    """Stage 1 verification: parse + structural checks."""
+    """Stage 1 verification: parse + intent verification engine."""
     try:
         tokens = Lexer(source, filename).tokenize()
         program = Parser(tokens, filename).parse()
@@ -94,53 +99,81 @@ def _cmd_check(source: str, filename: str) -> int:
         print(f"FAIL: {e}")
         return 1
 
-    issues = _check_program(program, filename)
-    if issues:
-        for issue in issues:
-            print(f"  WARNING: {issue}")
-        print(f"\n{filename}: {len(issues)} warning(s)")
+    results = verify_program(program, file=filename)
+
+    errors = [r for r in results if r.severity in (Severity.ERROR, Severity.CRITICAL)]
+    warnings = [r for r in results if r.severity == Severity.WARNING]
+    infos = [r for r in results if r.severity == Severity.INFO]
+
+    has_issues = False
+
+    for r in errors:
+        print(f"  ERROR {r.code}: {r.message}")
+        has_issues = True
+
+    for r in warnings:
+        print(f"  WARN  {r.code}: {r.message}")
+        has_issues = True
+
+    for r in infos:
+        print(f"  INFO  {r.code}: {r.message}")
+
+    # Print intent hashes for each contract
+    intent_text = ""
+    if program.header and program.header.intent:
+        intent_text = program.header.intent.text
+
+    print()
+    for contract in program.contracts:
+        fp = fingerprint_contract(contract)
+        ih = compute_intent_hash(contract, intent_text=intent_text, fingerprint=fp)
+        print(f"  {contract.name}: intent_hash={ih.combined_hash[:16]}...")
+
+    print()
+    if errors:
+        print(f"{filename}: FAIL ({len(errors)} error(s), {len(warnings)} warning(s))")
+        return 1
+    elif warnings:
+        print(f"{filename}: WARN ({len(warnings)} warning(s))")
+        return 0
     else:
         print(f"{filename}: OK")
-    return 0
+        return 0
 
 
-def _check_program(program, filename: str) -> list[str]:
-    """Run basic structural checks on the parsed program."""
-    issues = []
+def _cmd_fingerprint(source: str, filename: str) -> int:
+    """Display behavioral fingerprints for all contracts."""
+    try:
+        tokens = Lexer(source, filename).tokenize()
+        program = Parser(tokens, filename).parse()
+    except (LexerError, ParseError) as e:
+        print(f"Error: {e}")
+        return 1
+
+    intent_text = ""
+    if program.header and program.header.intent:
+        intent_text = program.header.intent.text
 
     for contract in program.contracts:
-        loc = f"{filename}:{contract.loc.line}"
+        fp = fingerprint_contract(contract)
+        ih = compute_intent_hash(contract, intent_text=intent_text, fingerprint=fp)
 
-        if contract.body is None:
-            issues.append(f"{loc}: contract '{contract.name}' has no body")
+        print(f"Contract: {contract.name}")
+        print(f"  Reads:       {sorted(fp.reads) or '(none)'}")
+        print(f"  Mutations:   {sorted(fp.mutations) or '(none)'}")
+        print(f"  Calls:       {sorted(fp.calls) or '(none)'}")
+        print(f"  Events:      {sorted(fp.emitted_events) or '(none)'}")
+        print(f"  old() refs:  {sorted(fp.old_references) or '(none)'}")
+        print(f"  Cap checks:  {sorted(fp.capability_checks) or '(none)'}")
+        print(f"  Branching:   {fp.has_branching}")
+        print(f"  Looping:     {fp.has_looping}")
+        print(f"  Recursion:   {fp.has_recursion}")
+        print(f"  Returns:     {fp.return_count}")
+        print(f"  Max depth:   {fp.max_nesting_depth}")
+        print(f"  Intent hash: {ih.combined_hash}")
+        print()
 
-        if contract.precondition is None:
-            issues.append(
-                f"{loc}: contract '{contract.name}' has no precondition — "
-                f"every contract should declare what must be true before execution"
-            )
-
-        if contract.postcondition is None:
-            issues.append(
-                f"{loc}: contract '{contract.name}' has no postcondition — "
-                f"every contract should declare what will be true after execution"
-            )
-
-        if contract.effects is None:
-            issues.append(
-                f"{loc}: contract '{contract.name}' has no effects declaration — "
-                f"every contract must declare its side effects"
-            )
-
-    if program.header is None:
-        issues.append(f"{filename}: no file header — consider adding intent and risk declarations")
-    else:
-        if program.header.intent is None:
-            issues.append(f"{filename}: no intent declaration")
-        if program.header.risk is None:
-            issues.append(f"{filename}: no risk level declared")
-
-    return issues
+    return 0
 
 
 def _print_program(program) -> None:
