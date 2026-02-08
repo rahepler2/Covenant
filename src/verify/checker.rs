@@ -365,6 +365,7 @@ pub fn verify_program(program: &Program, file: &str) -> Vec<VerificationResult> 
         .and_then(|h| h.requires.as_ref())
         .map(|r| r.capabilities.clone());
 
+    // Phase 2: Intent Verification Engine (E001-E005, W001-W008, I001-I002)
     for contract in &program.contracts {
         let fp = fingerprint_contract(contract);
         results.extend(verify_contract(
@@ -375,6 +376,12 @@ pub fn verify_program(program: &Program, file: &str) -> Vec<VerificationResult> 
             risk_level,
         ));
     }
+
+    // Phase 3: Capability Type System / IFC (F001-F006)
+    results.extend(super::capability::verify_capabilities(program, file));
+
+    // Phase 4: Contract Verification (V001-V005)
+    results.extend(super::contract_verify::verify_contracts(program, file));
 
     results
 }

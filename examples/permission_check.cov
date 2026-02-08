@@ -1,0 +1,35 @@
+-- Demonstrates Phase 3: Permission verification
+-- Expected: F002 (reads denied field), F003 (reads ungranted field)
+
+intent: "Test permission grants and denies"
+scope: medical.records
+risk: critical
+
+type PatientRecord = Record
+  fields:
+    name: String [pii, no_log, encrypt_at_rest]
+    diagnosis: MedicalCode [hipaa_protected, audit_on_read]
+    room: Integer [facility_internal]
+
+  flow_constraints:
+    never_flows_to: [external_api, log_sink, unencrypted_channel]
+    requires_context: medical_session
+
+contract read_denied_field(record: PatientRecord) -> String
+  permissions:
+    grants: [read(record.diagnosis)]
+    denies: [read(record.name), network_access]
+
+  precondition:
+    record.diagnosis != MedicalCode(0)
+
+  postcondition:
+    result != ""
+
+  effects:
+    reads [record]
+    touches_nothing_else
+
+  body:
+    name = record.name
+    return name
