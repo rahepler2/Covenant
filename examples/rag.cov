@@ -1,0 +1,159 @@
+-- RAG (Retrieval-Augmented Generation) system in Covenant
+-- Uses ollama for embeddings + chat, with vector search and guardrails
+--
+-- To run:  covenant run examples/rag.cov -c main --interpret
+-- Needs:   ollama running locally with llama3.2 and nomic-embed-text
+--           ollama pull llama3.2
+--           ollama pull nomic-embed-text
+
+intent: "Answer questions from a knowledge base using RAG"
+scope: demo.rag
+risk: low
+
+use ollama
+use embeddings
+use prompts
+use guardrails
+
+-- Embed a list of text chunks and return a list of {text, vector} entries
+contract build_index(chunks: List) -> List
+  precondition:
+    len(chunks) > 0
+
+  postcondition:
+    len(result) == len(chunks)
+
+  body:
+    index = []
+    i = 0
+    while i < len(chunks):
+      chunk = chunks[i]
+      print("  Embedding chunk " + str(i + 1) + "/" + str(len(chunks)))
+      vec = ollama.embed(chunk)
+      entry = Entry(text: chunk, vector: vec)
+      index = index + [entry]
+      i = i + 1
+    return index
+
+-- Search the index for the most relevant chunks
+contract search(query: String, index: List, k: Int) -> List
+  precondition:
+    len(index) > 0
+    k > 0
+
+  postcondition:
+    len(result) <= k
+
+  body:
+    query_vec = ollama.embed(query)
+
+    -- Collect vectors from the index
+    vectors = []
+    i = 0
+    while i < len(index):
+      vectors = vectors + [index[i].vector]
+      i = i + 1
+
+    -- Find nearest vectors
+    results = embeddings.nearest(query_vec, vectors, k: k)
+
+    -- Map results back to text
+    matched = []
+    i = 0
+    while i < len(results):
+      hit = results[i]
+      entry = index[hit.index]
+      matched = matched + [entry.text]
+      i = i + 1
+    return matched
+
+-- Ask a question using retrieved context
+contract ask(question: String, index: List) -> String
+  precondition:
+    question != ""
+    len(index) > 0
+
+  postcondition:
+    result != ""
+
+  body:
+    -- Retrieve relevant chunks
+    print("Searching knowledge base...")
+    chunks = search(question, index, 3)
+
+    -- Build context from matched chunks
+    context = text.join("\n\n", chunks)
+
+    -- Build the augmented prompt
+    augmented = prompts.template(
+      "Answer based ONLY on this context. If the context doesn't contain the answer, say so.\n\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:",
+      context: context,
+      question: question
+    )
+
+    -- Call the LLM
+    print("Generating answer...")
+    answer = ollama.chat(
+      augmented,
+      system: "You are a helpful assistant. Be concise and accurate."
+    )
+
+    -- Safety check — block responses with PII
+    has_pii = guardrails.check_pii(answer)
+    if has_pii != false:
+      return "Response contained personal information and was blocked."
+
+    return answer
+
+contract main() -> Int
+  precondition:
+    true
+
+  postcondition:
+    result == 0
+
+  body:
+    print("=== Covenant RAG Demo ===")
+    print("")
+
+    -- Knowledge base as chunks
+    chunks = [
+      "Covenant is a programming language designed for the age of AI. It uses contracts instead of functions.",
+      "Every contract has a precondition, postcondition, and body. Preconditions define what must be true before execution.",
+      "Postconditions define what must be true after execution. The body contains the actual logic.",
+      "The Intent Verification Engine checks that code behavior matches declared intent. It produces fingerprints and hashes.",
+      "Covenant has a capability type system for information flow control. It prevents data leaks between security domains.",
+      "The standard library has 20 modules. Tier 1: web, data, json, file, ai, crypto, time, math, text, env.",
+      "Tier 2 AI modules: http, anthropic, openai, ollama, grok, mcp, mcpx, embeddings, prompts, guardrails.",
+      "Covenant compiles to bytecode with 35 opcodes and runs on a stack-based VM. Files use .cov extension.",
+      "The risk level system has four levels: low, medium, high, critical. Higher risk escalates warnings to errors.",
+      "The language uses two-space indentation. Tabs are syntax errors. Comments start with double dashes."
+    ]
+
+    -- Build the vector index
+    print("Building index...")
+    index = build_index(chunks)
+    print("Index ready.")
+    print("")
+
+    -- Ask questions
+    q1 = "What is a contract in Covenant?"
+    print("Q: " + q1)
+    a1 = ask(q1, index)
+    print("A: " + a1)
+    print("")
+
+    q2 = "How many modules does the standard library have?"
+    print("Q: " + q2)
+    a2 = ask(q2, index)
+    print("A: " + a2)
+    print("")
+
+    q3 = "What is the Intent Verification Engine?"
+    print("Q: " + q3)
+    a3 = ask(q3, index)
+    print("A: " + a3)
+    print("")
+
+    print("=== Done ===")
+    return 0

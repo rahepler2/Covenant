@@ -257,6 +257,10 @@ impl ASTWalker {
                     "False".to_string()
                 });
             }
+            Expr::IndexAccess { object, index, .. } => {
+                self.walk_expr(object, fp);
+                self.walk_expr(index, fp);
+            }
         }
     }
 

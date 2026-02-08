@@ -212,7 +212,7 @@ impl<'a> ContractCompiler<'a> {
     }
 
     fn is_builtin(name: &str) -> bool {
-        matches!(name, "len" | "abs" | "min" | "max" | "range")
+        matches!(name, "len" | "abs" | "min" | "max" | "range" | "str" | "string" | "int" | "integer" | "float" | "type")
     }
 
     // ── Statement compilation ────────────────────────────────────────
@@ -454,6 +454,11 @@ impl<'a> ContractCompiler<'a> {
                 self.compile_expression(subject);
                 self.compile_expression(capability);
                 self.emit(Instruction::HasCapability);
+            }
+            Expr::IndexAccess { object, index, .. } => {
+                self.compile_expression(object);
+                self.compile_expression(index);
+                self.emit(Instruction::ListIndex);
             }
         }
     }

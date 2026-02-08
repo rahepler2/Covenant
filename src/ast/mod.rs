@@ -150,6 +150,11 @@ pub enum Expr {
         capability: Box<Expr>,
         loc: SourceLocation,
     },
+    IndexAccess {
+        object: Box<Expr>,
+        index: Box<Expr>,
+        loc: SourceLocation,
+    },
 }
 
 impl Expr {
@@ -167,6 +172,7 @@ impl Expr {
             Expr::MethodCall { loc, .. } => loc,
             Expr::OldExpr { loc, .. } => loc,
             Expr::HasExpr { loc, .. } => loc,
+            Expr::IndexAccess { loc, .. } => loc,
         }
     }
 }

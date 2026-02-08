@@ -676,6 +676,47 @@ impl VM {
                     _ => return Err(RuntimeError { message: "range() requires an integer".to_string() }),
                 }
             }
+            "str" | "string" => {
+                if let Some(val) = args.first() {
+                    Value::Str(format!("{}", val))
+                } else {
+                    Value::Str(String::new())
+                }
+            }
+            "int" | "integer" => {
+                match args.first() {
+                    Some(Value::Int(n)) => Value::Int(*n),
+                    Some(Value::Float(f)) => Value::Int(*f as i64),
+                    Some(Value::Str(s)) => Value::Int(s.parse::<i64>().map_err(|_| RuntimeError {
+                        message: format!("Cannot convert '{}' to int", s),
+                    })?),
+                    Some(Value::Bool(b)) => Value::Int(if *b { 1 } else { 0 }),
+                    _ => return Err(RuntimeError {
+                        message: "int() requires one argument".to_string(),
+                    }),
+                }
+            }
+            "float" => {
+                match args.first() {
+                    Some(Value::Float(f)) => Value::Float(*f),
+                    Some(Value::Int(n)) => Value::Float(*n as f64),
+                    Some(Value::Str(s)) => Value::Float(s.parse::<f64>().map_err(|_| RuntimeError {
+                        message: format!("Cannot convert '{}' to float", s),
+                    })?),
+                    _ => return Err(RuntimeError {
+                        message: "float() requires one argument".to_string(),
+                    }),
+                }
+            }
+            "type" => {
+                if let Some(val) = args.first() {
+                    Value::Str(val.type_name().to_string())
+                } else {
+                    return Err(RuntimeError {
+                        message: "type() requires one argument".to_string(),
+                    });
+                }
+            }
             _ => Value::Null,
         };
 

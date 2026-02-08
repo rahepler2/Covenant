@@ -1,0 +1,50 @@
+-- Tests for list indexing, str(), int(), float(), type()
+intent: "Test new language features: indexing and type conversion"
+scope: test.features
+risk: low
+
+contract main() -> Int
+  precondition:
+    true
+
+  postcondition:
+    result == 0
+
+  body:
+    -- List indexing
+    items = ["apple", "banana", "cherry"]
+    print(items[0])
+    print(items[1])
+    print(items[2])
+
+    -- Index with variable
+    i = 1
+    print(items[i])
+
+    -- Nested: index then field access
+    records = [Entry(name: "Alice", age: 30), Entry(name: "Bob", age: 25)]
+    print(records[0].name)
+    print(records[1].age)
+
+    -- str() conversion
+    n = 42
+    s = str(n)
+    print("Number as string: " + s)
+
+    f = 3.14
+    print("Float as string: " + str(f))
+
+    -- int() conversion
+    print(int("123"))
+    print(int(3.7))
+
+    -- float() conversion
+    print(float("2.5"))
+    print(float(10))
+
+    -- String concatenation with str()
+    count = 5
+    print("There are " + str(count) + " items")
+
+    print("All tests passed!")
+    return 0

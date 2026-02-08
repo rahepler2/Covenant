@@ -527,6 +527,47 @@ impl Interpreter {
                             })
                         }
                     }
+                    "str" | "string" => {
+                        if let Some(val) = args.first() {
+                            Ok(Value::Str(format!("{}", val)))
+                        } else {
+                            Ok(Value::Str(String::new()))
+                        }
+                    }
+                    "int" | "integer" => {
+                        match args.first() {
+                            Some(Value::Int(n)) => Ok(Value::Int(*n)),
+                            Some(Value::Float(f)) => Ok(Value::Int(*f as i64)),
+                            Some(Value::Str(s)) => s.parse::<i64>().map(Value::Int).map_err(|_| RuntimeError {
+                                message: format!("Cannot convert '{}' to int", s),
+                            }),
+                            Some(Value::Bool(b)) => Ok(Value::Int(if *b { 1 } else { 0 })),
+                            _ => Err(RuntimeError {
+                                message: "int() requires one argument".to_string(),
+                            }),
+                        }
+                    }
+                    "float" => {
+                        match args.first() {
+                            Some(Value::Float(f)) => Ok(Value::Float(*f)),
+                            Some(Value::Int(n)) => Ok(Value::Float(*n as f64)),
+                            Some(Value::Str(s)) => s.parse::<f64>().map(Value::Float).map_err(|_| RuntimeError {
+                                message: format!("Cannot convert '{}' to float", s),
+                            }),
+                            _ => Err(RuntimeError {
+                                message: "float() requires one argument".to_string(),
+                            }),
+                        }
+                    }
+                    "type" => {
+                        if let Some(val) = args.first() {
+                            Ok(Value::Str(val.type_name().to_string()))
+                        } else {
+                            Err(RuntimeError {
+                                message: "type() requires one argument".to_string(),
+                            })
+                        }
+                    }
                     _ => {
                         // Check if it's a contract call
                         if self.contracts.contains_key(&func_name) {
@@ -700,6 +741,39 @@ impl Interpreter {
                 let _subj = self.eval_expr(subject)?;
                 let _cap = self.eval_expr(capability)?;
                 Ok(Value::Bool(true))
+            }
+            Expr::IndexAccess {
+                object,
+                index,
+                ..
+            } => {
+                let obj = self.eval_expr(object)?;
+                let idx = self.eval_expr(index)?;
+                match (&obj, &idx) {
+                    (Value::List(items), Value::Int(i)) => {
+                        let i = *i;
+                        if i < 0 || i as usize >= items.len() {
+                            Err(RuntimeError {
+                                message: format!("Index {} out of bounds (list length {})", i, items.len()),
+                            })
+                        } else {
+                            Ok(items[i as usize].clone())
+                        }
+                    }
+                    (Value::Str(s), Value::Int(i)) => {
+                        let i = *i;
+                        if i < 0 || i as usize >= s.len() {
+                            Err(RuntimeError {
+                                message: format!("Index {} out of bounds (string length {})", i, s.len()),
+                            })
+                        } else {
+                            Ok(Value::Str(s.chars().nth(i as usize).unwrap().to_string()))
+                        }
+                    }
+                    _ => Err(RuntimeError {
+                        message: format!("Cannot index {} with {}", obj.type_name(), idx.type_name()),
+                    }),
+                }
             }
         }
     }
