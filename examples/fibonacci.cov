@@ -1,0 +1,27 @@
+intent: "Calculate fibonacci numbers iteratively"
+scope: math.fibonacci
+risk: low
+
+contract fibonacci(n: Int) -> Int
+  precondition:
+    n >= 0
+
+  postcondition:
+    result >= 0
+
+  effects:
+    reads [n]
+    touches_nothing_else
+
+  body:
+    if n <= 1:
+      return n
+    a = 0
+    b = 1
+    i = 2
+    while i <= n:
+      temp = a + b
+      a = b
+      b = temp
+      i = i + 1
+    return b
