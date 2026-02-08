@@ -1,0 +1,49 @@
+-- Chat with a local Ollama model
+-- Usage: covenant run examples/ollama_chat.cov -c main
+
+intent: "Ask questions to a local Ollama LLM and display answers"
+scope: demo.ollama
+risk: low
+
+contract ask(question: String) -> String
+  precondition:
+    question != ""
+
+  postcondition:
+    result != ""
+
+  effects:
+    reads [question]
+
+  body:
+    -- Build JSON request body
+    req = json.stringify(Request(model: "llama3.2", prompt: question, stream: false))
+
+    -- POST to Ollama's generate endpoint
+    response = web.post("http://localhost:11434/api/generate", req)
+
+    -- Parse the JSON response and extract the answer
+    data = response.json()
+    answer = data.response
+
+    print("Q:", question)
+    print("A:", answer)
+    print("")
+    return answer
+
+contract main() -> Int
+  precondition:
+    true
+
+  postcondition:
+    result == 0
+
+  body:
+    print("=== Covenant + Ollama ===")
+    print("")
+
+    ask("What is 2 + 2? Answer in one sentence.")
+    ask("What is the capital of France? Answer in one sentence.")
+    ask("Explain recursion in one sentence.")
+
+    return 0
