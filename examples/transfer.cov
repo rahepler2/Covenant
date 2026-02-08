@@ -1,0 +1,30 @@
+intent: "Transfer funds between two accounts if sufficient balance exists"
+scope: finance.transfers
+risk: high
+requires: [auth.verified, ledger.write_access]
+
+contract transfer(from: Account, to: Account, amount: Currency) -> TransferResult
+  precondition:
+    from.balance >= amount
+    from.owner has auth.current_session
+    amount > Currency(0)
+
+  postcondition:
+    from.balance == old(from.balance) - amount
+    to.balance == old(to.balance) + amount
+    ledger.sum() == old(ledger.sum())
+
+  effects:
+    modifies [from.balance, to.balance]
+    emits TransferEvent
+    touches_nothing_else
+
+  body:
+    hold = ledger.escrow(from, amount)
+    ledger.deposit(to, hold)
+    emit TransferEvent(from, to, amount, timestamp.now())
+    return TransferResult.success(receipt: hold.receipt)
+
+  on_failure:
+    ledger.rollback(hold)
+    return TransferResult.insufficient_funds()

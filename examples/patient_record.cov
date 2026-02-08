@@ -1,0 +1,34 @@
+intent: "Define a patient record with HIPAA-compliant data flow constraints"
+scope: medical.records
+risk: critical
+
+type PatientRecord = Record
+  fields:
+    name: String [pii, no_log, encrypt_at_rest]
+    diagnosis: MedicalCode [hipaa_protected, audit_on_read]
+    room: Integer [facility_internal]
+
+  flow_constraints:
+    never_flows_to: [external_api, log_sink, unencrypted_channel]
+    requires_context: medical_session
+
+contract analyze_patient(record: PatientRecord) -> DiagnosisSummary
+  permissions:
+    grants: [read(record.diagnosis), read(record.room)]
+    denies: [read(record.name), network_access, filesystem_write]
+    escalation: requires human_approval for any permission change
+
+  precondition:
+    record.diagnosis != MedicalCode(0)
+
+  postcondition:
+    result.based_on == record.diagnosis
+
+  effects:
+    reads [record.diagnosis, record.room]
+    touches_nothing_else
+
+  body:
+    summary = DiagnosisSummary.from_code(record.diagnosis)
+    summary = summary.with_location(record.room)
+    return summary
