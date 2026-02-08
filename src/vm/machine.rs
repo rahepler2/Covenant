@@ -443,6 +443,11 @@ impl VM {
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 + y)),
             (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x + *y as f64)),
             (Value::Str(x), Value::Str(y)) => Ok(Value::Str(format!("{}{}", x, y))),
+            (Value::List(x), Value::List(y)) => {
+                let mut combined = x.clone();
+                combined.extend(y.iter().cloned());
+                Ok(Value::List(combined))
+            }
             _ => Err(RuntimeError {
                 message: format!("Cannot add {} and {}", a.type_name(), b.type_name()),
             }),
