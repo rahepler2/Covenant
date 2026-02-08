@@ -850,6 +850,16 @@ impl Interpreter {
                     message: format!("Cannot apply '{}' to strings", op),
                 }),
             },
+            (Value::List(a), Value::List(b)) => match op {
+                "+" => {
+                    let mut combined = a.clone();
+                    combined.extend(b.iter().cloned());
+                    Ok(Value::List(combined))
+                }
+                _ => Err(RuntimeError {
+                    message: format!("Cannot apply '{}' to lists", op),
+                }),
+            },
             (Value::Bool(a), Value::Bool(b)) => match op {
                 "==" => Ok(Value::Bool(a == b)),
                 "!=" => Ok(Value::Bool(a != b)),
