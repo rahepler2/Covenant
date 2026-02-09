@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Covenant Task Manager</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; max-width: 600px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #38bdf8; margin-bottom: 0.25rem; }
+    .subtitle { color: #64748b; margin-bottom: 2rem; font-size: 0.875rem; }
+    .add-form { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+    .add-form input { flex: 1; padding: 0.75rem; border: 1px solid #334155; border-radius: 0.5rem; background: #1e293b; color: #e2e8f0; font-size: 1rem; }
+    .add-form input:focus { outline: none; border-color: #38bdf8; }
+    .add-form button { padding: 0.75rem 1.5rem; border: none; border-radius: 0.5rem; background: #38bdf8; color: #0f172a; font-weight: 600; cursor: pointer; }
+    .add-form button:hover { background: #7dd3fc; }
+    .task { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; margin-bottom: 0.5rem; background: #1e293b; border-radius: 0.5rem; border: 1px solid #334155; }
+    .task.done { opacity: 0.5; }
+    .task.done .task-title { text-decoration: line-through; }
+    .task-title { flex: 1; }
+    .task-date { color: #64748b; font-size: 0.75rem; }
+    .task button { padding: 0.25rem 0.75rem; border: none; border-radius: 0.25rem; cursor: pointer; font-size: 0.8rem; }
+    .btn-done { background: #22c55e; color: white; }
+    .btn-delete { background: #ef4444; color: white; }
+    .empty { text-align: center; color: #64748b; padding: 2rem; }
+    .badge { display: inline-block; background: #1e293b; border: 1px solid #334155; border-radius: 1rem; padding: 0.125rem 0.5rem; font-size: 0.75rem; color: #38bdf8; margin-left: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Task Manager</h1>
+  <p class="subtitle">Powered by Covenant <span class="badge">covenant serve</span></p>
+
+  <div class="add-form">
+    <input type="text" id="newTask" placeholder="What needs to be done?" />
+    <button onclick="addTask()">Add</button>
+  </div>
+
+  <div id="tasks"></div>
+
+  <script>
+    const API = '/api';
+
+    async function loadTasks() {
+      const res = await fetch(`${API}/list_tasks`);
+      const json = await res.json();
+      const container = document.getElementById('tasks');
+
+      if (!json.ok || !json.data || json.data.length === 0) {
+        container.innerHTML = '<div class="empty">No tasks yet. Add one above!</div>';
+        return;
+      }
+
+      container.innerHTML = json.data.map(task => `
+        <div class="task ${task.done ? 'done' : ''}">
+          <span class="task-title">${escapeHtml(task.title)}</span>
+          <span class="task-date">${task.created_at || ''}</span>
+          ${!task.done ? `<button class="btn-done" onclick="completeTask(${task.id})">Done</button>` : ''}
+          <button class="btn-delete" onclick="deleteTask(${task.id})">Delete</button>
+        </div>
+      `).join('');
+    }
+
+    async function addTask() {
+      const input = document.getElementById('newTask');
+      const title = input.value.trim();
+      if (!title) return;
+
+      await fetch(`${API}/create_task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title })
+      });
+
+      input.value = '';
+      loadTasks();
+    }
+
+    async function completeTask(id) {
+      await fetch(`${API}/complete_task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      loadTasks();
+    }
+
+    async function deleteTask(id) {
+      await fetch(`${API}/delete_task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      loadTasks();
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    document.getElementById('newTask').addEventListener('keydown', e => {
+      if (e.key === 'Enter') addTask();
+    });
+
+    loadTasks();
+  </script>
+</body>
+</html>

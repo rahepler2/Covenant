@@ -13,6 +13,7 @@ use covenant_lang::verify::fingerprint::fingerprint_contract;
 use covenant_lang::verify::hasher::compute_intent_hash;
 use covenant_lang::verify::mapper;
 use covenant_lang::verify::type_check;
+use covenant_lang::serve;
 use covenant_lang::vm::compiler::Compiler as BytecodeCompiler;
 use covenant_lang::vm::bytecode::Module as BytecodeModule;
 use covenant_lang::vm::machine::VM;
@@ -96,6 +97,24 @@ enum Commands {
     Init,
     /// List installed packages
     Packages,
+    /// Start HTTP server mapping contracts to API endpoints
+    Serve {
+        /// .cov files to serve (or directory to scan)
+        #[arg(default_value = ".")]
+        files: Vec<PathBuf>,
+        /// Port to listen on
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+        /// Host to bind to
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Directory to serve static files from
+        #[arg(short, long)]
+        static_dir: Option<PathBuf>,
+        /// API route prefix
+        #[arg(long, default_value = "/api")]
+        prefix: String,
+    },
     /// Show impact map of contracts, scopes, and dependencies
     Map {
         /// Directory to scan (defaults to current directory)
@@ -146,6 +165,13 @@ fn main() {
         } => cmd_exec(&file, contract.as_deref(), &arg),
         Commands::Disasm { file } => cmd_disasm(&file),
         Commands::Add { name, global } => cmd_add(&name, global),
+        Commands::Serve {
+            files,
+            port,
+            host,
+            static_dir,
+            prefix,
+        } => cmd_serve(&files, port, &host, static_dir.as_deref(), &prefix),
         Commands::Init => cmd_init(),
         Commands::Packages => cmd_packages(),
         Commands::Map { dir, contract, file } => cmd_map(&dir, contract.as_deref(), file.as_deref()),
@@ -666,6 +692,53 @@ fn json_to_value(json: &serde_json::Value) -> Value {
     }
 }
 
+fn cmd_serve(
+    files: &[PathBuf],
+    port: u16,
+    host: &str,
+    static_dir: Option<&std::path::Path>,
+    prefix: &str,
+) -> i32 {
+    // Collect .cov files
+    let mut cov_files: Vec<PathBuf> = Vec::new();
+
+    for path in files {
+        if path.is_dir() {
+            // Scan directory for .cov files
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.extension().and_then(|e| e.to_str()) == Some("cov") {
+                        cov_files.push(p);
+                    }
+                }
+            }
+        } else if path.extension().and_then(|e| e.to_str()) == Some("cov") {
+            cov_files.push(path.clone());
+        }
+    }
+
+    if cov_files.is_empty() {
+        eprintln!("Error: no .cov files found");
+        return 1;
+    }
+
+    let config = serve::ServeConfig {
+        port,
+        host: host.to_string(),
+        static_dir: static_dir.map(|p| p.to_path_buf()),
+        api_prefix: prefix.to_string(),
+    };
+
+    match serve::start_server(&cov_files, &config) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("Server error: {}", e);
+            1
+        }
+    }
+}
+
 fn cmd_add(name: &str, global: bool) -> i32 {
     use covenant_lang::packages;
 
@@ -755,7 +828,7 @@ fn cmd_packages() -> i32 {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     println!("Built-in modules (always available):");
-    println!("  Tier 1: web, data, json, file, ai, crypto, time, math, text, env");
+    println!("  Tier 1: web, data, json, file, ai, crypto, time, math, text, env, db");
     println!("  Tier 2: http, anthropic, openai, ollama, grok, mcp, mcpx, embeddings, prompts, guardrails");
     println!();
 
