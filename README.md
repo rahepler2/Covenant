@@ -345,14 +345,21 @@ docs/             Language reference, stdlib docs, architecture guide
 
 ## Roadmap
 
-- [ ] True concurrent execution for `parallel:` blocks (currently sequential)
-- [ ] Async runtime with real non-blocking I/O
-- [ ] Package registry and versioning
-- [ ] LSP server for editor integration
-- [ ] WASM compilation target
-- [ ] Structured error types and try/catch
-- [ ] Trait/interface system
-- [ ] Hot reload for `covenant serve`
+Currently at **v0.1.0** — the foundation is complete.
+
+| Version | Theme | Key Deliverable |
+|---------|-------|----------------|
+| **0.1.0** | Foundation | Core language + verification + VM + stdlib |
+| **0.2.0** | Reliability | Test suite + error handling (`try`/`catch`) + CI |
+| **0.3.0** | Concurrency | Real async/parallel + channels |
+| **0.4.0** | DX | LSP + hot reload + REPL + formatter |
+| **0.5.0** | Ecosystem | Package registry + dependency management |
+| **0.6.0** | Types | Traits + pattern matching + generics |
+| **0.7.0** | Performance | WASM + JIT + optimization |
+| **0.8.0** | Production | Logging + metrics + TLS + Docker |
+| **1.0.0** | Stable | Language spec + stability guarantee + security audit |
+
+See [ROADMAP.md](ROADMAP.md) for the full breakdown.
 
 ## License
 
