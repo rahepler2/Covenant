@@ -88,10 +88,14 @@ impl Compiler {
         let local_count = cc.locals.len() as u16;
         let local_names = cc.locals.clone();
         let params = contract.params.iter().map(|p| p.name.clone()).collect();
+        let param_types = contract.params.iter().map(|p| p.type_expr.display_name()).collect();
+        let return_type = contract.return_type.as_ref().map(|t| t.display_name());
 
         CompiledContract {
             name: contract.name.clone(),
             params,
+            param_types,
+            return_type,
             local_count,
             local_names,
             code: cc.instructions,

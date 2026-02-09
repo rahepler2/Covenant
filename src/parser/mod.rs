@@ -1230,8 +1230,43 @@ impl Parser {
     fn parse_type_expr(&mut self) -> Result<TypeExpr, ParseError> {
         let loc = self.loc();
         let name = self.expect(TokenType::Identifier)?.value.clone();
+
+        // Generic types: List<Int>, Map<String, Int>, Optional<String>
+        if self.check(TokenType::LessThan) {
+            self.advance();
+            let mut params = Vec::new();
+            params.push(self.parse_type_expr()?);
+            while self.check(TokenType::Comma) {
+                self.advance();
+                params.push(self.parse_type_expr()?);
+            }
+            self.expect(TokenType::GreaterThan)?;
+
+            let base = TypeExpr::Generic { loc: loc.clone(), name, params };
+
+            // Generic types can also have annotations: List<Int> [sorted]
+            if self.check(TokenType::LBracket) {
+                self.advance();
+                let mut annotations = Vec::new();
+                annotations.push(self.expect(TokenType::Identifier)?.value.clone());
+                while self.check(TokenType::Comma) {
+                    self.advance();
+                    annotations.push(self.expect(TokenType::Identifier)?.value.clone());
+                }
+                self.expect(TokenType::RBracket)?;
+                return Ok(TypeExpr::Annotated {
+                    loc,
+                    base: Box::new(base),
+                    annotations,
+                });
+            }
+
+            return Ok(base);
+        }
+
         let base = TypeExpr::Simple { loc: loc.clone(), name };
 
+        // Annotated types: String [pii, sensitive]
         if self.check(TokenType::LBracket) {
             self.advance();
             let mut annotations = Vec::new();
@@ -1271,8 +1306,13 @@ impl Parser {
     fn parse_param(&mut self) -> Result<Param, ParseError> {
         let loc = self.loc();
         let name = self.expect(TokenType::Identifier)?.value.clone();
-        self.expect(TokenType::Colon)?;
-        let type_expr = self.parse_type_expr()?;
+        // Type annotation is optional: `n: Int` or just `n`
+        let type_expr = if self.check(TokenType::Colon) {
+            self.advance();
+            self.parse_type_expr()?
+        } else {
+            TypeExpr::Simple { name: "Any".to_string(), loc: loc.clone() }
+        };
         Ok(Param {
             loc,
             name,

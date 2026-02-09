@@ -12,6 +12,7 @@ use covenant_lang::verify::checker::{verify_program, Severity};
 use covenant_lang::verify::fingerprint::fingerprint_contract;
 use covenant_lang::verify::hasher::compute_intent_hash;
 use covenant_lang::verify::mapper;
+use covenant_lang::verify::type_check;
 use covenant_lang::vm::compiler::Compiler as BytecodeCompiler;
 use covenant_lang::vm::bytecode::Module as BytecodeModule;
 use covenant_lang::vm::machine::VM;
@@ -248,6 +249,9 @@ fn cmd_check(path: &PathBuf) -> i32 {
 
     let results = verify_program(&program, &filename);
 
+    // Run static type checker
+    let type_warnings = type_check::check_types(&program);
+
     let errors: Vec<_> = results
         .iter()
         .filter(|r| matches!(r.severity, Severity::Error | Severity::Critical))
@@ -263,6 +267,9 @@ fn cmd_check(path: &PathBuf) -> i32 {
 
     for r in &errors {
         println!("  ERROR {}: {}", r.code, r.message);
+    }
+    for tw in &type_warnings {
+        println!("  TYPE  {}: {} (line {})", tw.code, tw.message, tw.line);
     }
     for r in &warnings {
         println!("  WARN  {}: {}", r.code, r.message);
@@ -291,16 +298,16 @@ fn cmd_check(path: &PathBuf) -> i32 {
     }
 
     println!();
-    if !errors.is_empty() {
+    let total_errors = errors.len();
+    let total_warnings = warnings.len() + type_warnings.len();
+    if total_errors > 0 {
         println!(
             "{}: FAIL ({} error(s), {} warning(s))",
-            filename,
-            errors.len(),
-            warnings.len()
+            filename, total_errors, total_warnings
         );
         1
-    } else if !warnings.is_empty() {
-        println!("{}: WARN ({} warning(s))", filename, warnings.len());
+    } else if total_warnings > 0 {
+        println!("{}: WARN ({} warning(s))", filename, total_warnings);
         0
     } else {
         println!("{}: OK", filename);
@@ -398,7 +405,10 @@ fn cmd_run(path: &PathBuf, contract_name: Option<&str>, args: &[(String, String)
 
     let target_name = match contract_name {
         Some(name) => name.to_string(),
-        None => program.contracts[0].name.clone(),
+        None => program.contracts.iter()
+            .find(|c| c.name == "main")
+            .unwrap_or(&program.contracts[0])
+            .name.clone(),
     };
 
     // Parse arguments
@@ -446,7 +456,10 @@ fn cmd_run_interpret(path: &PathBuf, contract_name: Option<&str>, args: &[(Strin
 
     let target_name = match contract_name {
         Some(name) => name.to_string(),
-        None => program.contracts[0].name.clone(),
+        None => program.contracts.iter()
+            .find(|c| c.name == "main")
+            .unwrap_or(&program.contracts[0])
+            .name.clone(),
     };
 
     let mut arg_values: HashMap<String, Value> = HashMap::new();
@@ -535,7 +548,10 @@ fn cmd_exec(path: &PathBuf, contract_name: Option<&str>, args: &[(String, String
 
     let target_name = match contract_name {
         Some(name) => name.to_string(),
-        None => module.contracts[0].name.clone(),
+        None => module.contracts.iter()
+            .find(|c| c.name == "main")
+            .unwrap_or(&module.contracts[0])
+            .name.clone(),
     };
 
     let mut arg_values: HashMap<String, Value> = HashMap::new();

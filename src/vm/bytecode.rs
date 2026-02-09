@@ -16,6 +16,8 @@ pub struct Module {
 pub struct CompiledContract {
     pub name: String,
     pub params: Vec<String>,
+    pub param_types: Vec<String>,    // Type names for each param ("Any" if untyped)
+    pub return_type: Option<String>, // Return type name if declared
     pub local_count: u16,
     pub local_names: Vec<String>,
     pub code: Vec<Instruction>,
@@ -24,7 +26,7 @@ pub struct CompiledContract {
 // ── Binary serialization ─────────────────────────────────────────────────
 
 const MAGIC: &[u8; 4] = b"COVC";
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
 
 // Constant type tags
 const TAG_NULL: u8 = 0;
@@ -190,6 +192,18 @@ fn serialize_contract(buf: &mut Vec<u8>, contract: &CompiledContract) {
     for p in &contract.params {
         write_string(buf, p);
     }
+    // Param types
+    write_u16(buf, contract.param_types.len() as u16);
+    for t in &contract.param_types {
+        write_string(buf, t);
+    }
+    // Return type (0 = none, 1 = present)
+    if let Some(ref rt) = contract.return_type {
+        buf.push(1);
+        write_string(buf, rt);
+    } else {
+        buf.push(0);
+    }
     write_u16(buf, contract.local_count);
     write_u16(buf, contract.local_names.len() as u16);
     for name in &contract.local_names {
@@ -341,6 +355,23 @@ fn deserialize_contract(data: &[u8], pos: &mut usize) -> Result<CompiledContract
     for _ in 0..param_count {
         params.push(read_string(data, pos)?);
     }
+    // Param types
+    let type_count = read_u16(data, pos)? as usize;
+    let mut param_types = Vec::with_capacity(type_count);
+    for _ in 0..type_count {
+        param_types.push(read_string(data, pos)?);
+    }
+    // Return type
+    if *pos >= data.len() {
+        return Err("Unexpected end of bytecode in return type flag".to_string());
+    }
+    let has_return = data[*pos];
+    *pos += 1;
+    let return_type = if has_return == 1 {
+        Some(read_string(data, pos)?)
+    } else {
+        None
+    };
     let local_count = read_u16(data, pos)?;
     let name_count = read_u16(data, pos)? as usize;
     let mut local_names = Vec::with_capacity(name_count);
@@ -355,6 +386,8 @@ fn deserialize_contract(data: &[u8], pos: &mut usize) -> Result<CompiledContract
     Ok(CompiledContract {
         name,
         params,
+        param_types,
+        return_type,
         local_count,
         local_names,
         code,
