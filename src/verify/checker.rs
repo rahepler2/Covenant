@@ -75,8 +75,7 @@ pub fn verify_contract(
         return results;
     }
 
-    // At low/medium risk, missing sections are fine — no warnings.
-    // At high/critical risk, missing sections are errors.
+    // At high/critical risk, missing sections are always errors.
     if contract.precondition.is_none() && matches!(risk_level, RiskLevel::High | RiskLevel::Critical) {
         add(
             Severity::Error,
@@ -99,6 +98,42 @@ pub fn verify_contract(
             "W005",
             "no effects declaration — required at high/critical risk".to_string(),
         );
+    }
+
+    // Auto-escalation: at ANY risk level, if the body has external side effects
+    // (mutations to dotted paths, emitted events) but no effects declaration,
+    // require the developer to declare them. Pure/self-contained code is fine
+    // without declarations, but code that impacts other contracts must be explicit.
+    if contract.effects.is_none() && !matches!(risk_level, RiskLevel::High | RiskLevel::Critical) {
+        let external_mutations: Vec<_> = fp.mutations.iter()
+            .filter(|m| m.contains('.'))
+            .collect();
+        let has_emits = !fp.emitted_events.is_empty();
+
+        if !external_mutations.is_empty() || has_emits {
+            let mut reasons = Vec::new();
+            if !external_mutations.is_empty() {
+                reasons.push(format!(
+                    "mutates {}",
+                    external_mutations.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                ));
+            }
+            if has_emits {
+                reasons.push(format!(
+                    "emits {}",
+                    fp.emitted_events.iter().cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+            add(
+                Severity::Error,
+                "W005",
+                format!(
+                    "contract has external side effects ({}) — must declare effects: block. \
+                     Pure contracts don't need this, but code that impacts other state must be explicit.",
+                    reasons.join("; ")
+                ),
+            );
+        }
     }
 
     // -- Effect completeness (E001/E002) --
