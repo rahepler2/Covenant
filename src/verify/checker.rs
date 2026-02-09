@@ -80,7 +80,11 @@ pub fn verify_contract(
         add(
             Severity::Error,
             "W003",
-            "no precondition — required at high/critical risk".to_string(),
+            format!(
+                "no precondition — required at {} risk. Add:\n  precondition:\n           <your input constraints here>\n  \
+                 Or lower the file risk level if this contract doesn't need input validation.",
+                risk_level
+            ),
         );
     }
 
@@ -88,7 +92,11 @@ pub fn verify_contract(
         add(
             Severity::Error,
             "W004",
-            "no postcondition — required at high/critical risk".to_string(),
+            format!(
+                "no postcondition — required at {} risk. Add:\n  postcondition:\n           <your output guarantees here>\n  \
+                 Or lower the file risk level if this contract doesn't need output guarantees.",
+                risk_level
+            ),
         );
     }
 
@@ -96,7 +104,11 @@ pub fn verify_contract(
         add(
             Severity::Error,
             "W005",
-            "no effects declaration — required at high/critical risk".to_string(),
+            format!(
+                "no effects declaration — required at {} risk. Add:\n  effects:\n           touches_nothing_else\n  \
+                 Or declare specific effects: modifies [...], emits Event, reads [...].",
+                risk_level
+            ),
         );
     }
 
@@ -124,13 +136,33 @@ pub fn verify_contract(
                     fp.emitted_events.iter().cloned().collect::<Vec<_>>().join(", ")
                 ));
             }
+
+            // Build a suggested fix showing the exact effects block they need
+            let mut fix_lines = Vec::new();
+            if !external_mutations.is_empty() {
+                let mod_targets: Vec<&str> = external_mutations.iter()
+                    .map(|m| m.as_str())
+                    .collect();
+                fix_lines.push(format!("modifies [{}]", mod_targets.join(", ")));
+            }
+            if has_emits {
+                for ev in &fp.emitted_events {
+                    fix_lines.push(format!("emits {}", ev));
+                }
+            }
+            let fix_block: String = fix_lines.iter()
+                .map(|l| format!("           {}", l))
+                .collect::<Vec<_>>()
+                .join("\n");
+
             add(
                 Severity::Error,
                 "W005",
                 format!(
-                    "contract has external side effects ({}) — must declare effects: block. \
-                     Pure contracts don't need this, but code that impacts other state must be explicit.",
-                    reasons.join("; ")
+                    "contract '{}' has external side effects ({}) but no effects: block. \
+                     Add:\n  effects:\n{}\n  \
+                     Or mark the contract `pure` if it should have no side effects.",
+                    name, reasons.join("; "), fix_block,
                 ),
             );
         }

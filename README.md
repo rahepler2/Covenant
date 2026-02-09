@@ -20,54 +20,101 @@ covenant check examples/transfer.cov
 covenant serve --port 8080 --static-dir static/
 ```
 
-## What Covenant Looks Like
+## Verbosity Scales With Risk
+
+Covenant has one rule: **the more your code impacts the outside world, the more you must declare**. Pure helpers are one-liners. Functions that mutate state require contracts. The language enforces this automatically.
+
+### Level 1: Pure One-Liners
+
+No ceremony. Expression body, done.
 
 ```covenant
-intent: "Transfer funds between two accounts if sufficient balance exists"
+contract tax_rate(country: String) -> Float = 0.20
+contract net(gross: Float, rate: Float) -> Float = gross * (1.0 - rate)
+contract flag(amount: Float, limit: Float) -> Bool = amount > limit
+```
+
+### Level 2: Pure Helpers With Logic
+
+More complex, but still no side effects. `pure` is shorthand for `effects: touches_nothing_else`.
+
+```covenant
+contract classify_expense(amount: Float) -> String
+  pure
+  body:
+    if amount > 10000.0:
+      return "HIGH"
+    if amount > 1000.0:
+      return "MEDIUM"
+    return "LOW"
+```
+
+### Level 3: Side Effects Require Declaration
+
+This contract writes to a database and emits an event. Covenant **requires** the `effects` block. Without it, you get a compile error with the exact fix:
+
+```
+ERROR W005: contract 'save_record' has external side effects
+  (mutates db; emits RecordSaved) but no effects: block. Add:
+  effects:
+    modifies [db]
+    emits RecordSaved
+  Or mark the contract `pure` if it should have no side effects.
+```
+
+The verified version:
+
+```covenant
+contract analyze_expenses() -> Int
+  precondition:
+    true
+  postcondition:
+    result >= 0
+  effects:
+    modifies [audit.log]
+    emits AuditComplete
+  body:
+    -- ... process expenses, flag anomalies ...
+    fingerprint = crypto.sha256(str(total) + str(flagged))
+    emit AuditComplete(total, flagged, fingerprint)
+    return flagged
+```
+
+### Level 4: High-Risk Requires Everything
+
+At `risk: high`, preconditions, postconditions, effects, and `on_failure` are all required:
+
+```covenant
+intent: "Transfer funds between accounts"
 scope: finance.transfers
 risk: high
 
 contract transfer(from: Account, to: Account, amount: Currency) -> TransferResult
   precondition:
     from.balance >= amount
-    from.owner has auth.current_session
     amount > Currency(0)
-
   postcondition:
     from.balance == old(from.balance) - amount
     to.balance == old(to.balance) + amount
-
   effects:
     modifies [from.balance, to.balance]
     emits TransferEvent
     touches_nothing_else
-
   body:
     hold = ledger.escrow(from, amount)
     ledger.deposit(to, hold)
     emit TransferEvent(from, to, amount, time.now())
     return TransferResult.success(receipt: hold.receipt)
-
   on_failure:
     ledger.rollback(hold)
     return TransferResult.insufficient_funds()
 ```
 
-## Concise Syntax
-
-Covenant supports both verbose and concise styles. Simple contracts can be expression bodies:
-
-```covenant
--- Full contract with types
-contract square(n: Int) -> Int = n * n
-
--- Untyped (gradual typing — inferred as Any)
-contract double(n) = n * 2
-
--- Multi-statement with optional returns
-contract greet(name: String)
-  body:
-    print("Hello, " + name + "!")
+**Try the flagship demo** to see this in action:
+```bash
+covenant check examples/flagship.cov        # Verify
+covenant fingerprint examples/flagship.cov   # See behavioral fingerprints
+covenant run examples/flagship.cov           # Execute via bytecode VM
 ```
 
 ## Type System
@@ -75,7 +122,10 @@ contract greet(name: String)
 Gradual typing — add types when you want safety, omit them when scripting.
 
 ```covenant
--- Explicit types with generics
+-- Untyped (inferred as Any)
+contract double(n) = n * 2
+
+-- Fully typed with generics
 contract process(items: List<Int>, threshold: Float) -> List<Int>
   body:
     result = []
@@ -83,11 +133,6 @@ contract process(items: List<Int>, threshold: Float) -> List<Int>
       if item > threshold:
         result = result + [item]
     return result
-
--- Optional types (Map, Optional)
-contract lookup(data: Map<String, Int>, key: String) -> Optional<Int>
-  body:
-    ...
 ```
 
 Types are enforced at runtime (both interpreter and VM) and checked statically by `covenant check` (T001-T004 codes).
@@ -234,7 +279,7 @@ covenant tokenize <file.cov>               Display token stream
 **Static Type Checking**
 - T001-T004: Argument type mismatch, return type mismatch, operator mismatch, wrong arg count
 
-**Auto-Escalation**: At `high`/`critical` risk, behavioral warnings (W003-W005) escalate to errors. Contracts with external side effects (mutations, events) but no `effects` block are always rejected.
+**Auto-Escalation**: Verification is proportional to risk. At `high`/`critical` risk, missing preconditions/postconditions/effects are errors. At **any** risk level, contracts with external side effects but no `effects` block are rejected — with a suggested fix showing the exact declaration needed.
 
 ## Bytecode VM
 
