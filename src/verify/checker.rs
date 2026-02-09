@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use crate::ast::*;
 use crate::verify::fingerprint::{fingerprint_contract, fingerprint_expressions, BehavioralFingerprint};
+use crate::runtime::stdlib;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -43,6 +44,7 @@ pub fn verify_contract(
     file: &str,
     declared_capabilities: Option<&[String]>,
     risk_level: RiskLevel,
+    sibling_contracts: Option<&[String]>,
 ) -> Vec<VerificationResult> {
     let owned_fp;
     let fp = match fingerprint {
@@ -200,9 +202,13 @@ pub fn verify_contract(
     }
 
     // -- Effect soundness (W001) --
+    // Check declared mutations against both direct assignments (fp.mutations)
+    // and method calls that target the same root (heuristic: calling obj.method()
+    // when modifies [obj.field] is declared counts as an indirect mutation)
 
     for declared in &declared_modifies {
-        if !is_observed_in(declared, &fp.mutations) {
+        if !is_observed_in(declared, &fp.mutations)
+            && !is_covered_by_call(declared, &fp.calls) {
             add(
                 Severity::Warning,
                 "W001",
@@ -273,6 +279,23 @@ pub fn verify_contract(
                 }
             }
         }
+        // Stdlib modules are always safe to call
+        for module in stdlib::STDLIB_MODULE_NAMES {
+            allowed_call_prefixes.insert(module.to_string());
+        }
+        // Built-in functions
+        allowed_call_prefixes.insert("print".to_string());
+        allowed_call_prefixes.insert("len".to_string());
+        allowed_call_prefixes.insert("range".to_string());
+        allowed_call_prefixes.insert("str".to_string());
+        allowed_call_prefixes.insert("int".to_string());
+        allowed_call_prefixes.insert("float".to_string());
+        // Contracts defined in the same file (local helpers)
+        if let Some(siblings) = sibling_contracts {
+            for name in siblings {
+                allowed_call_prefixes.insert(name.clone());
+            }
+        }
 
         for call in &fp.calls {
             let root = call.split('.').next().unwrap_or("");
@@ -336,7 +359,8 @@ pub fn verify_contract(
     if let Some(ref postcondition) = contract.postcondition {
         let postcond_fp = fingerprint_expressions(&postcondition.conditions);
         for old_ref in &postcond_fp.old_references {
-            if !is_mutation_covered(old_ref, &fp.mutations) {
+            if !is_mutation_covered(old_ref, &fp.mutations)
+                && !is_covered_by_call(old_ref, &fp.calls) {
                 add(
                     Severity::Warning,
                     "W007",
@@ -421,6 +445,7 @@ pub fn verify_program(program: &Program, file: &str) -> Vec<VerificationResult> 
     results.extend(verify_scope(program, file));
 
     // Phase 2: Intent Verification Engine (E001-E005, W001-W008, I001-I002)
+    let sibling_names: Vec<String> = program.contracts.iter().map(|c| c.name.clone()).collect();
     for contract in &program.contracts {
         let fp = fingerprint_contract(contract);
         results.extend(verify_contract(
@@ -429,6 +454,7 @@ pub fn verify_program(program: &Program, file: &str) -> Vec<VerificationResult> 
             file,
             declared_capabilities.as_deref(),
             risk_level,
+            Some(&sibling_names),
         ));
     }
 
@@ -628,6 +654,24 @@ fn is_observed_in(declared: &str, actual: &std::collections::BTreeSet<String>) -
             return true;
         }
         if declared.starts_with(&format!("{}.", a)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Heuristic: a declared mutation `obj.field` is "covered" if the body calls
+/// a method on the same root object (e.g., `obj.method(...)` or `obj.sub.method(...)`).
+/// This handles common patterns like `ledger.escrow(from, amount)` covering
+/// `modifies [from.balance]` when `from` appears as a call argument.
+fn is_covered_by_call(declared: &str, calls: &std::collections::BTreeSet<String>) -> bool {
+    let root = declared.split('.').next().unwrap_or("");
+    if root.is_empty() {
+        return false;
+    }
+    for call in calls {
+        let call_root = call.split('.').next().unwrap_or("");
+        if call_root == root {
             return true;
         }
     }

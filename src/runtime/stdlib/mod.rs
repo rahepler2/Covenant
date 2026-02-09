@@ -31,13 +31,16 @@ pub mod guardrails;
 use super::{Value, RuntimeError};
 use std::collections::HashMap;
 
-const STDLIB_MODULES: &[&str] = &[
+/// Public list of stdlib module names (used by the verifier to whitelist safe calls)
+pub const STDLIB_MODULE_NAMES: &[&str] = &[
     // Tier 1
     "web", "data", "json", "file", "ai", "crypto", "time", "math", "text", "env", "db",
     // Tier 2
     "http", "anthropic", "openai", "ollama", "grok", "mcp", "mcpx",
     "embeddings", "prompts", "guardrails",
 ];
+
+const STDLIB_MODULES: &[&str] = STDLIB_MODULE_NAMES;
 
 /// Check if a name refers to a stdlib module
 pub fn is_stdlib_module(name: &str) -> bool {

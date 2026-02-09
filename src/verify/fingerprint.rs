@@ -16,6 +16,7 @@ pub struct BehavioralFingerprint {
     pub literals: Vec<String>,
     pub has_branching: bool,
     pub has_looping: bool,
+    pub has_error_handling: bool,
     pub has_recursion: bool,
     pub return_count: usize,
     pub max_nesting_depth: usize,
@@ -34,6 +35,7 @@ impl BehavioralFingerprint {
             literals: Vec::new(),
             has_branching: false,
             has_looping: false,
+            has_error_handling: false,
             has_recursion: false,
             return_count: 0,
             max_nesting_depth: 0,
@@ -57,6 +59,7 @@ impl BehavioralFingerprint {
             "literals": lits,
             "has_branching": self.has_branching,
             "has_looping": self.has_looping,
+            "has_error_handling": self.has_error_handling,
             "has_recursion": self.has_recursion,
             "return_count": self.return_count,
             "max_nesting_depth": self.max_nesting_depth,
@@ -158,6 +161,13 @@ impl ASTWalker {
                 for branch in branches {
                     self.walk_statements(branch, depth + 1, fp);
                 }
+            }
+            Statement::TryCatch { try_body, catch_body, finally_body, .. } => {
+                fp.has_error_handling = true;
+                fp.has_branching = true;
+                self.walk_statements(try_body, depth + 1, fp);
+                self.walk_statements(catch_body, depth + 1, fp);
+                self.walk_statements(finally_body, depth + 1, fp);
             }
         }
     }

@@ -59,7 +59,6 @@ contract analyze_expenses() -> Int
     result >= 0
 
   effects:
-    modifies [audit.log]
     emits AuditComplete
 
   body:

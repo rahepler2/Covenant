@@ -230,6 +230,14 @@ pub enum Statement {
         branches: Vec<Vec<Statement>>,
         loc: SourceLocation,
     },
+    /// `try:/catch e:/finally:` error handling block.
+    TryCatch {
+        try_body: Vec<Statement>,
+        catch_var: Option<String>,
+        catch_body: Vec<Statement>,
+        finally_body: Vec<Statement>,
+        loc: SourceLocation,
+    },
 }
 
 impl Statement {
@@ -243,6 +251,7 @@ impl Statement {
             Statement::For { loc, .. } => loc,
             Statement::While { loc, .. } => loc,
             Statement::Parallel { loc, .. } => loc,
+            Statement::TryCatch { loc, .. } => loc,
         }
     }
 }
