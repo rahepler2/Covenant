@@ -155,6 +155,13 @@ pub enum Expr {
         index: Box<Expr>,
         loc: SourceLocation,
     },
+    NullLiteral {
+        loc: SourceLocation,
+    },
+    AwaitExpr {
+        inner: Box<Expr>,
+        loc: SourceLocation,
+    },
 }
 
 impl Expr {
@@ -173,6 +180,8 @@ impl Expr {
             Expr::OldExpr { loc, .. } => loc,
             Expr::HasExpr { loc, .. } => loc,
             Expr::IndexAccess { loc, .. } => loc,
+            Expr::NullLiteral { loc, .. } => loc,
+            Expr::AwaitExpr { loc, .. } => loc,
         }
     }
 }
@@ -215,6 +224,12 @@ pub enum Statement {
         body: Vec<Statement>,
         loc: SourceLocation,
     },
+    /// `parallel:` block — executes branches concurrently.
+    /// Each branch is a list of statements that can run independently.
+    Parallel {
+        branches: Vec<Vec<Statement>>,
+        loc: SourceLocation,
+    },
 }
 
 impl Statement {
@@ -227,6 +242,7 @@ impl Statement {
             Statement::If { loc, .. } => loc,
             Statement::For { loc, .. } => loc,
             Statement::While { loc, .. } => loc,
+            Statement::Parallel { loc, .. } => loc,
         }
     }
 }
@@ -333,6 +349,7 @@ pub struct ContractDef {
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
+    pub is_async: bool,
     pub precondition: Option<Precondition>,
     pub postcondition: Option<Postcondition>,
     pub effects: Option<Effects>,

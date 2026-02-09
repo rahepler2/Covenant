@@ -1,0 +1,52 @@
+-- Demonstrates async contracts and parallel execution
+-- Currently simulated sequential; real threading in a future phase
+
+intent: "Demonstrate async and parallel patterns"
+scope: demo.async
+risk: low
+
+-- Async contracts can run concurrently when used in parallel blocks
+async contract fetch_users() -> String
+  body:
+    return "users: [alice, bob]"
+
+async contract fetch_posts() -> String
+  body:
+    return "posts: [hello, world]"
+
+async contract fetch_stats() -> String
+  body:
+    return "stats: {views: 1000}"
+
+-- Parallel block: each statement runs as an independent branch
+contract load_dashboard()
+  body:
+    users = null
+    posts = null
+    stats = null
+
+    parallel:
+      users = fetch_users()
+      posts = fetch_posts()
+      stats = fetch_stats()
+
+    print(users)
+    print(posts)
+    print(stats)
+
+-- Await: explicitly wait for an async result
+async contract compute(n: Int) -> Int
+  body:
+    result = 0
+    i = 0
+    while i < n:
+      result = result + i * i
+      i = i + 1
+    return result
+
+contract main()
+  body:
+    load_dashboard()
+    print("")
+    answer = await compute(100)
+    print("Computed: " + str(answer))

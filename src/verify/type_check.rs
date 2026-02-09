@@ -207,6 +207,11 @@ fn check_stmt(
             infer_expr(condition, env, sigs, warnings);
             check_stmts(body, env, sigs, expected_return, contract_name, warnings);
         }
+        Statement::Parallel { branches, .. } => {
+            for branch in branches {
+                check_stmts(branch, env, sigs, expected_return, contract_name, warnings);
+            }
+        }
     }
 }
 
@@ -348,6 +353,8 @@ fn infer_expr(
                 _ => InferredType::Any,
             }
         }
+        Expr::NullLiteral { .. } => InferredType::Null,
+        Expr::AwaitExpr { inner, .. } => infer_expr(inner, env, sigs, warnings),
     }
 }
 

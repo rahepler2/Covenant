@@ -112,7 +112,7 @@ contract add(a: Int, b: Int) -> Int
     return a + b
 ```
 
-Return type (`-> Type`) is also optional — omit it when you don't need to constrain the output.
+Return type (`-> Type`) is also optional — omit it when you don't need to constrain the output. Parameter types are also optional — `contract add(a, b) = a + b` works for scripting-style code.
 
 ### What is Scope?
 

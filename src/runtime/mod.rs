@@ -423,6 +423,17 @@ impl Interpreter {
                 }
                 Ok(StmtResult::Continue)
             }
+            // Execute parallel branches sequentially for now (simulated parallelism).
+            // TODO: real threading / async execution in a future phase
+            Statement::Parallel { branches, .. } => {
+                for branch in branches {
+                    match self.exec_statements(branch)? {
+                        StmtResult::Return(val) => return Ok(StmtResult::Return(val)),
+                        StmtResult::Continue => {}
+                    }
+                }
+                Ok(StmtResult::Continue)
+            }
         }
     }
 
@@ -873,6 +884,9 @@ impl Interpreter {
                     }),
                 }
             }
+            Expr::NullLiteral { .. } => Ok(Value::Null),
+            // Evaluate inner expression directly (no real async yet)
+            Expr::AwaitExpr { inner, .. } => self.eval_expr(inner),
         }
     }
 

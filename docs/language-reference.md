@@ -224,8 +224,60 @@ The Intent Verification Engine checks that your body matches these declarations.
 | `String` | UTF-8 string | `"hello"`, `"line\n"` |
 | `Bool` | Boolean | `true`, `false` |
 | `List` | Ordered collection | `[1, 2, 3]`, `[]` |
+| `List<T>` | Typed list | `List<Int>`, `List<String>` |
+| `Map<K, V>` | Key-value map | `Map<String, Int>` |
+| `Optional<T>` | Nullable type | `Optional<String>` |
 | `Object` | Named record with fields | `Person(name: "Alice")` |
 | `Null` | Absence of value | `null` |
+| `Any` | Any type (untyped) | implicit when type omitted |
+
+### Type Checking
+
+Types are checked at both compile time and runtime:
+
+```
+-- Static: `covenant check` catches type errors before running
+contract square(n: Int) -> Int = n * n
+square("hello")   -- T001: argument 'n' expects Int, got String
+
+-- Runtime: type errors are caught when contracts execute
+contract get_name() -> String
+  body:
+    return 42      -- Type error: expected String, got Int
+```
+
+Error codes:
+- **T001**: argument type mismatch
+- **T002**: return type mismatch
+- **T003**: operator type mismatch (`"hello" * 5`)
+- **T004**: wrong argument count
+
+### Gradual Typing
+
+Parameter types are optional. Omit them for scripting-style code:
+
+```
+-- Fully typed
+contract add(a: Int, b: Int) -> Int = a + b
+
+-- Untyped (accepts any arguments)
+contract add(a, b) = a + b
+
+-- Mixed
+contract greet(name: String, excited) -> String
+  body:
+    if excited:
+      return "HI " + name + "!!!"
+    return "Hello, " + name
+
+-- Generic types
+contract sum_list(items: List<Int>) -> Int
+  body:
+    total = 0
+    for item in items:
+      total = total + item
+    return total
+```
 
 ### Objects (Constructors)
 
@@ -352,6 +404,38 @@ Emit named events:
 ```
 emit TransferCompleted(from, to, amount)
 emit UserLoggedIn(user_id)
+```
+
+### Parallel
+
+Execute independent work concurrently:
+
+```
+parallel:
+  users = fetch_users()
+  posts = fetch_posts()
+  stats = fetch_stats()
+```
+
+Each statement in the `parallel:` block runs as an independent branch. The block completes when all branches finish.
+
+### Async Contracts
+
+Mark contracts that can run concurrently:
+
+```
+async contract fetch_data(url: String) -> String
+  body:
+    response = web.get(url)
+    return response.body
+```
+
+### Await
+
+Explicitly wait for an async result:
+
+```
+result = await slow_computation(1000)
 ```
 
 ## Built-in Functions

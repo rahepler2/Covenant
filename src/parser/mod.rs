@@ -85,7 +85,7 @@ impl Parser {
                 break;
             }
 
-            if self.check(TokenType::Contract) {
+            if self.check(TokenType::Contract) || self.check(TokenType::Async) {
                 contracts.push(self.parse_contract_def()?);
             } else if self.check(TokenType::Type) {
                 type_defs.push(self.parse_type_def()?);
@@ -229,6 +229,13 @@ impl Parser {
 
     fn parse_contract_def(&mut self) -> Result<ContractDef, ParseError> {
         let loc = self.loc();
+        // Optional `async` modifier: `async contract fetch_data(...)`
+        let is_async = if self.check(TokenType::Async) {
+            self.advance();
+            true
+        } else {
+            false
+        };
         self.expect(TokenType::Contract)?;
         let name = self.expect(TokenType::Identifier)?.value.clone();
 
@@ -261,6 +268,7 @@ impl Parser {
                 name,
                 params,
                 return_type,
+                is_async,
                 precondition: None,
                 postcondition: None,
                 effects: None,
@@ -330,6 +338,7 @@ impl Parser {
             name,
             params,
             return_type,
+            is_async,
             precondition,
             postcondition,
             effects,
@@ -549,6 +558,9 @@ impl Parser {
         if self.check(TokenType::While) {
             return self.parse_while_stmt();
         }
+        if self.check(TokenType::Parallel) {
+            return self.parse_parallel_stmt();
+        }
 
         // Parse expression first, then decide if it's an assignment
         let expr = self.parse_expression()?;
@@ -682,6 +694,32 @@ impl Parser {
             condition,
             body,
         })
+    }
+
+    fn parse_parallel_stmt(&mut self) -> Result<Statement, ParseError> {
+        let loc = self.loc();
+        self.expect(TokenType::Parallel)?;
+        self.expect(TokenType::Colon)?;
+        self.expect(TokenType::Newline)?;
+        self.expect(TokenType::Indent)?;
+
+        // Each branch is a block of statements at this indent level
+        // Branches are separated by `--` comments or blank lines followed by new statements
+        // For simplicity, each statement at this level is its own branch
+        let mut branches: Vec<Vec<Statement>> = Vec::new();
+
+        while !self.check(TokenType::Dedent) && !self.at_end() {
+            self.skip_newlines();
+            if self.check(TokenType::Dedent) || self.at_end() {
+                break;
+            }
+            let stmt = self.parse_statement()?;
+            self.skip_newlines();
+            branches.push(vec![stmt]);
+        }
+        self.expect(TokenType::Dedent)?;
+
+        Ok(Statement::Parallel { loc, branches })
     }
 
     // ── Expressions (precedence climbing) ───────────────────────────────
@@ -957,6 +995,18 @@ impl Parser {
                 Ok(Expr::Identifier {
                     loc,
                     name: tok.value.clone(),
+                })
+            }
+            TokenType::Null => {
+                self.advance();
+                Ok(Expr::NullLiteral { loc })
+            }
+            TokenType::Await => {
+                self.advance();
+                let inner = self.parse_expression()?;
+                Ok(Expr::AwaitExpr {
+                    loc,
+                    inner: Box::new(inner),
                 })
             }
             TokenType::LBracket => self.parse_list_literal(),

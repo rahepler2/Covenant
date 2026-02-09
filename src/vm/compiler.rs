@@ -327,6 +327,13 @@ impl<'a> ContractCompiler<'a> {
                 self.emit_loop(loop_start);
                 self.patch_jump(end_jump);
             }
+
+            // Compile parallel branches sequentially (placeholder until real concurrency)
+            Statement::Parallel { branches, .. } => {
+                for branch in branches {
+                    self.compile_statements(branch);
+                }
+            }
         }
     }
 
@@ -463,6 +470,15 @@ impl<'a> ContractCompiler<'a> {
                 self.compile_expression(object);
                 self.compile_expression(index);
                 self.emit(Instruction::ListIndex);
+            }
+
+            Expr::NullLiteral { .. } => {
+                self.emit(Instruction::LoadNull);
+            }
+
+            // Compile inner expression directly (placeholder until real async)
+            Expr::AwaitExpr { inner, .. } => {
+                self.compile_expression(inner);
             }
         }
     }

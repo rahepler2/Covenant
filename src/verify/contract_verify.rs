@@ -237,6 +237,12 @@ fn find_dead_code(stmts: &[Statement]) -> Vec<SourceLocation> {
         if let Statement::For { body, .. } | Statement::While { body, .. } = stmt {
             dead.extend(find_dead_code(body));
         }
+        // Recurse into parallel branches
+        if let Statement::Parallel { branches, .. } = stmt {
+            for branch in branches {
+                dead.extend(find_dead_code(branch));
+            }
+        }
     }
 
     dead
