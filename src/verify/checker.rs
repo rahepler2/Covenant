@@ -365,6 +365,9 @@ pub fn verify_program(program: &Program, file: &str) -> Vec<VerificationResult> 
         .and_then(|h| h.requires.as_ref())
         .map(|r| r.capabilities.clone());
 
+    // Phase 0: Scope namespace validation (S001-S003)
+    results.extend(verify_scope(program, file));
+
     // Phase 2: Intent Verification Engine (E001-E005, W001-W008, I001-I002)
     for contract in &program.contracts {
         let fp = fingerprint_contract(contract);
@@ -382,6 +385,108 @@ pub fn verify_program(program: &Program, file: &str) -> Vec<VerificationResult> 
 
     // Phase 4: Contract Verification (V001-V005)
     results.extend(super::contract_verify::verify_contracts(program, file));
+
+    results
+}
+
+/// Verify scope namespace requirements (S001-S003)
+fn verify_scope(program: &Program, file: &str) -> Vec<VerificationResult> {
+    let mut results = Vec::new();
+    let line = program
+        .header
+        .as_ref()
+        .map(|h| h.loc.line)
+        .unwrap_or(1);
+
+    // S001: scope is required
+    let scope_path = match program
+        .header
+        .as_ref()
+        .and_then(|h| h.scope.as_ref())
+    {
+        Some(s) => &s.path,
+        None => {
+            results.push(VerificationResult {
+                severity: Severity::Error,
+                code: "S001".to_string(),
+                message: "missing scope declaration — every file must declare scope: domain.module"
+                    .to_string(),
+                contract_name: "(file)".to_string(),
+                file: file.to_string(),
+                line,
+            });
+            return results;
+        }
+    };
+
+    // S002: scope must have at least 2 segments (domain.module)
+    let segments: Vec<&str> = scope_path.split('.').collect();
+    if segments.len() < 2 {
+        results.push(VerificationResult {
+            severity: Severity::Error,
+            code: "S002".to_string(),
+            message: format!(
+                "scope '{}' must have at least two segments (e.g., domain.module), got {}",
+                scope_path,
+                segments.len()
+            ),
+            contract_name: "(file)".to_string(),
+            file: file.to_string(),
+            line,
+        });
+    }
+
+    // S002: scope segments must be lowercase identifiers
+    for segment in &segments {
+        if segment.is_empty() {
+            results.push(VerificationResult {
+                severity: Severity::Error,
+                code: "S002".to_string(),
+                message: format!("scope '{}' contains empty segment", scope_path),
+                contract_name: "(file)".to_string(),
+                file: file.to_string(),
+                line,
+            });
+        } else if !segment.chars().all(|c| c.is_ascii_lowercase() || c == '_' || c.is_ascii_digit()) {
+            results.push(VerificationResult {
+                severity: Severity::Error,
+                code: "S002".to_string(),
+                message: format!(
+                    "scope segment '{}' must be lowercase (a-z, 0-9, _)",
+                    segment
+                ),
+                contract_name: "(file)".to_string(),
+                file: file.to_string(),
+                line,
+            });
+        }
+    }
+
+    // S003: scope should be consistent with intent
+    if let Some(ref header) = program.header {
+        if let (Some(ref intent), Some(ref scope)) = (&header.intent, &header.scope) {
+            let intent_lower = intent.text.to_lowercase();
+            // Check if any scope segment is reflected in the intent
+            let scope_reflected = segments.iter().any(|seg| {
+                seg.len() >= 3 && intent_lower.contains(*seg)
+            });
+
+            if !scope_reflected && intent.text.len() > 10 {
+                results.push(VerificationResult {
+                    severity: Severity::Warning,
+                    code: "S003".to_string(),
+                    message: format!(
+                        "scope '{}' does not appear related to intent \"{}\". \
+                         Scope should reflect the domain this code belongs to.",
+                        scope.path, intent.text
+                    ),
+                    contract_name: "(file)".to_string(),
+                    file: file.to_string(),
+                    line: scope.loc.line,
+                });
+            }
+        }
+    }
 
     results
 }

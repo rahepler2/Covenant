@@ -11,6 +11,7 @@ use covenant_lang::runtime::{Interpreter, Value};
 use covenant_lang::verify::checker::{verify_program, Severity};
 use covenant_lang::verify::fingerprint::fingerprint_contract;
 use covenant_lang::verify::hasher::compute_intent_hash;
+use covenant_lang::verify::mapper;
 use covenant_lang::vm::compiler::Compiler as BytecodeCompiler;
 use covenant_lang::vm::bytecode::Module as BytecodeModule;
 use covenant_lang::vm::machine::VM;
@@ -94,6 +95,18 @@ enum Commands {
     Init,
     /// List installed packages
     Packages,
+    /// Show impact map of contracts, scopes, and dependencies
+    Map {
+        /// Directory to scan (defaults to current directory)
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// Show impact for a specific contract
+        #[arg(short, long)]
+        contract: Option<String>,
+        /// Show impact for a specific file
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+    },
 }
 
 fn parse_arg(s: &str) -> Result<(String, String), String> {
@@ -134,6 +147,7 @@ fn main() {
         Commands::Add { name, global } => cmd_add(&name, global),
         Commands::Init => cmd_init(),
         Commands::Packages => cmd_packages(),
+        Commands::Map { dir, contract, file } => cmd_map(&dir, contract.as_deref(), file.as_deref()),
     };
     process::exit(exit_code);
 }
@@ -739,6 +753,28 @@ fn cmd_packages() -> i32 {
         }
     }
 
+    0
+}
+
+fn cmd_map(dir: &PathBuf, contract: Option<&str>, file: Option<&std::path::Path>) -> i32 {
+    let map = if let Some(file_path) = file {
+        // Scan a specific file + the project directory for cross-references
+        let project_map = mapper::build_project_map(dir);
+        // If file not in project dir, also scan it
+        let file_str = file_path.to_string_lossy().to_string();
+        print!("{}", mapper::format_file_impact(&project_map, &file_str));
+        return 0;
+    } else {
+        mapper::build_project_map(dir)
+    };
+
+    if let Some(contract_name) = contract {
+        // Targeted: show impact for a specific contract
+        print!("{}", mapper::format_contract_impact(&map, contract_name));
+    } else {
+        // Full project map
+        print!("{}", mapper::format_full_map(&map));
+    }
     0
 }
 

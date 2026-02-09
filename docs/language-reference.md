@@ -41,9 +41,36 @@ contract name(param: Type) -> ReturnType
 | Field | Required | Description |
 |-------|----------|-------------|
 | `intent` | Yes | Human-readable purpose string |
-| `scope` | Yes | Dotted path (e.g., `banking.transfers`) |
-| `risk` | Yes | `low`, `medium`, `high`, or `critical` |
+| `scope` | Yes | Enforced namespace (e.g., `banking.transfers`) |
+| `risk` | Yes | Verification strictness: `low`, `medium`, `high`, or `critical` |
 | `requires` | No | List of required capabilities |
+
+### Scope (Namespace)
+
+Scope is an enforced namespace, validated at compile time:
+
+- **S001**: Scope is required — every file must have `scope: domain.module`
+- **S002**: Must have at least 2 dot-separated segments (e.g., `finance.transfers`, not just `finance`)
+- **S002**: All segments must be lowercase (`a-z`, `0-9`, `_`)
+- **S003**: Scope should relate to the intent text (warning if no segment appears in the intent)
+
+```
+scope: finance.transfers     -- valid
+scope: demo.hello            -- valid
+scope: finance               -- ERROR: S002 (needs 2+ segments)
+scope: Finance.Transfers     -- ERROR: S002 (must be lowercase)
+```
+
+### Risk (Verification Strictness)
+
+Risk controls how strict the compiler is, not what the code does:
+
+| Level | Missing pre/postcondition | Missing effects | IFC |
+|-------|--------------------------|----------------|-----|
+| `low` | Warning | Warning | Basic |
+| `medium` | Warning | Warning | Basic |
+| `high` | **Error** | **Error** | Full |
+| `critical` | **Error** | **Error** | Full + flow tracing |
 
 ### Use Declarations
 
@@ -336,9 +363,15 @@ tmpl = prompts.template("Hi {name}", name: "Alice")
 
 ## Verification
 
-### Intent Verification Engine (IVE)
+Run `covenant check file.cov` to verify your code. The checker runs multiple phases:
 
-Run `covenant check file.cov` to verify:
+### Phase 0: Scope Namespace (S001-S003)
+
+- **S001**: Missing scope declaration (error)
+- **S002**: Invalid scope format — needs 2+ lowercase segments (error)
+- **S003**: Scope doesn't relate to intent text (warning)
+
+### Phase 1: Intent Verification Engine (E001-E005, W001-W008, I001-I002)
 
 - **E001**: Body modifies state not declared in `effects`
 - **E003**: `touches_nothing_else` violated — body calls undeclared functions
@@ -372,6 +405,16 @@ covenant fingerprint file.cov
 ```
 
 Shows reads, mutations, calls, events, old() references, branching, looping, recursion, and the intent hash for each contract.
+
+### Impact Mapping
+
+```bash
+covenant map                           # full project map
+covenant map --contract transfer       # specific contract impact
+covenant map --file transfer.cov       # specific file impact
+```
+
+Shows scope-grouped contract trees with effects, cross-scope dependencies, and shared state contention. See [CLI Reference](cli.md#covenant-map-dir-options) for details.
 
 ## Execution Model
 
