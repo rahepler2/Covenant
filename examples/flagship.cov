@@ -1,0 +1,122 @@
+-- ═══════════════════════════════════════════════════════════════
+-- Covenant Flagship Demo: Verifiable Data Transform + LLM Call
+-- ═══════════════════════════════════════════════════════════════
+--
+-- This file demonstrates the full Covenant story:
+--   1. Pure one-liner helpers (no ceremony)
+--   2. Scoped pure functions (with verification)
+--   3. A mutating contract (full contract required)
+--   4. Run `covenant check` to see the verification
+--   5. Run `covenant fingerprint` to see behavioral fingerprints
+--   6. Run `covenant run` to execute
+--
+-- Try it:
+--   covenant check examples/flagship.cov
+--   covenant fingerprint examples/flagship.cov
+--   covenant run examples/flagship.cov
+
+intent: "Analyze expense data, flag anomalies, and generate audit summary"
+scope: finance.audit
+risk: medium
+
+-- ─── Pure helpers: zero ceremony ──────────────────────────────
+-- These are expression bodies. No preconditions, no effects, no
+-- boilerplate. They're pure functions — input in, output out.
+
+contract tax_rate(country: String) -> Float = 0.20
+contract net(gross: Float, rate: Float) -> Float = gross * (1.0 - rate)
+contract flag(amount: Float, limit: Float) -> Bool = amount > limit
+
+-- ─── Scoped pure function: verified but lightweight ──────────
+-- The `pure` keyword is shorthand for `effects: touches_nothing_else`.
+-- This tells the verifier: "I promise I don't mutate anything."
+
+contract classify_expense(amount: Float) -> String
+  pure
+
+  body:
+    if amount > 10000.0:
+      return "HIGH"
+    if amount > 1000.0:
+      return "MEDIUM"
+    return "LOW"
+
+-- ─── Full contract: side effects require declaration ─────────
+-- This contract writes to the database and emits an event.
+-- Covenant REQUIRES the effects block here. Without it, you get:
+--
+--   ERROR W005: contract has external side effects (mutates db;
+--   emits AuditComplete) — must declare effects: block.
+--
+-- Pure contracts don't need this. Only code that impacts external
+-- state must be explicit about what it touches.
+
+contract analyze_expenses() -> Int
+  precondition:
+    true
+
+  postcondition:
+    result >= 0
+
+  effects:
+    modifies [audit.log]
+    emits AuditComplete
+
+  body:
+    -- Build expense data
+    expenses = [
+      Expense(vendor: "Acme Corp", amount: 2500.00, category: "supplies"),
+      Expense(vendor: "CloudHost", amount: 14200.00, category: "infrastructure"),
+      Expense(vendor: "Office Co", amount: 450.00, category: "supplies"),
+      Expense(vendor: "DataVault", amount: 8900.00, category: "infrastructure"),
+      Expense(vendor: "TravelEx", amount: 22000.00, category: "travel")
+    ]
+
+    -- Analyze each expense using our pure helpers
+    flagged = 0
+    total = 0.0
+    report = []
+
+    for exp in expenses:
+      tier = classify_expense(exp.amount)
+      is_flagged = flag(exp.amount, 10000.0)
+      after_tax = net(exp.amount, tax_rate("US"))
+
+      total = total + exp.amount
+
+      if is_flagged:
+        flagged = flagged + 1
+        report = report + [exp.vendor + ": $" + str(exp.amount) + " [FLAGGED - " + tier + "]"]
+      else:
+        report = report + [exp.vendor + ": $" + str(exp.amount) + " [" + tier + "]"]
+
+    -- Print audit report
+    print("═══ EXPENSE AUDIT REPORT ═══")
+    print("")
+    for line in report:
+      print("  " + line)
+    print("")
+    print("Total: $" + str(total))
+    print("Flagged: " + str(flagged) + " of " + str(5))
+    print("Effective rate: " + str(tax_rate("US") * 100.0) + "%")
+    print("")
+
+    -- Hash the report for tamper detection
+    fingerprint = crypto.sha256(str(total) + str(flagged))
+    print("Audit fingerprint: " + fingerprint)
+
+    -- Emit completion event
+    emit AuditComplete(total, flagged, fingerprint)
+
+    return flagged
+
+-- ─── Entry point ─────────────────────────────────────────────
+contract main() -> Int
+  body:
+    flagged = analyze_expenses()
+    print("")
+    if flagged > 0:
+      print("⚠ " + str(flagged) + " expense(s) require review")
+    else:
+      print("✓ All expenses within limits")
+    return 0
