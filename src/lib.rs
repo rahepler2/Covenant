@@ -5,3 +5,4 @@ pub mod verify;
 pub mod runtime;
 pub mod vm;
 pub mod packages;
+pub mod serve;

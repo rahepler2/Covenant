@@ -436,6 +436,11 @@ impl<'a> FlowTracker<'a> {
                 self.check_expression_flow(condition);
                 self.track_statements(body);
             }
+            Statement::Parallel { branches, .. } => {
+                for branch in branches {
+                    self.track_statements(branch);
+                }
+            }
         }
     }
 
@@ -512,7 +517,9 @@ impl<'a> FlowTracker<'a> {
             Expr::HasExpr { .. }
             | Expr::StringLiteral { .. }
             | Expr::NumberLiteral { .. }
-            | Expr::BoolLiteral { .. } => Labels::new(),
+            | Expr::BoolLiteral { .. }
+            | Expr::NullLiteral { .. } => Labels::new(),
+            Expr::AwaitExpr { inner, .. } => self.compute_labels(inner),
         }
     }
 

@@ -85,7 +85,7 @@ impl Parser {
                 break;
             }
 
-            if self.check(TokenType::Contract) {
+            if self.check(TokenType::Contract) || self.check(TokenType::Async) {
                 contracts.push(self.parse_contract_def()?);
             } else if self.check(TokenType::Type) {
                 type_defs.push(self.parse_type_def()?);
@@ -229,6 +229,13 @@ impl Parser {
 
     fn parse_contract_def(&mut self) -> Result<ContractDef, ParseError> {
         let loc = self.loc();
+        // Optional `async` modifier: `async contract fetch_data(...)`
+        let is_async = if self.check(TokenType::Async) {
+            self.advance();
+            true
+        } else {
+            false
+        };
         self.expect(TokenType::Contract)?;
         let name = self.expect(TokenType::Identifier)?.value.clone();
 
@@ -236,8 +243,40 @@ impl Parser {
         let params = self.parse_param_list()?;
         self.expect(TokenType::RParen)?;
 
-        self.expect(TokenType::Arrow)?;
-        let return_type = Some(self.parse_type_expr()?);
+        // Return type is optional: `-> Type` or omitted
+        let return_type = if self.check(TokenType::Arrow) {
+            self.advance();
+            Some(self.parse_type_expr()?)
+        } else {
+            None
+        };
+
+        // Expression-body shorthand: `contract square(n: Int) -> Int = n * n`
+        if self.check(TokenType::Assign) {
+            self.advance();
+            let expr = self.parse_expression()?;
+            let body_loc = expr.loc().clone();
+            let body = Body {
+                statements: vec![Statement::Return {
+                    value: expr,
+                    loc: body_loc.clone(),
+                }],
+                loc: body_loc,
+            };
+            return Ok(ContractDef {
+                loc,
+                name,
+                params,
+                return_type,
+                is_async,
+                precondition: None,
+                postcondition: None,
+                effects: None,
+                permissions: None,
+                body: Some(body),
+                on_failure: None,
+            });
+        }
 
         self.expect(TokenType::Newline)?;
         self.expect(TokenType::Indent)?;
@@ -261,6 +300,15 @@ impl Parser {
                 postcondition = Some(self.parse_postcondition()?);
             } else if self.check(TokenType::Effects) {
                 effects = Some(self.parse_effects()?);
+            } else if self.check(TokenType::Pure) {
+                // `pure` is shorthand for `effects: touches_nothing_else`
+                let pure_loc = self.loc();
+                self.advance();
+                self.skip_newlines();
+                effects = Some(Effects {
+                    declarations: vec![EffectDecl::TouchesNothingElse { loc: pure_loc.clone() }],
+                    loc: pure_loc,
+                });
             } else if self.check(TokenType::Permissions) {
                 permissions = Some(self.parse_permissions()?);
             } else if self.check(TokenType::Body) {
@@ -272,7 +320,7 @@ impl Parser {
                 return Err(ParseError {
                     message: format!(
                         "Expected contract section (precondition, postcondition, effects, \
-                         permissions, body, on_failure), got {:?}",
+                         pure, permissions, body, on_failure), got {:?}",
                         cur.token_type
                     ),
                     line: cur.line,
@@ -290,6 +338,7 @@ impl Parser {
             name,
             params,
             return_type,
+            is_async,
             precondition,
             postcondition,
             effects,
@@ -509,6 +558,9 @@ impl Parser {
         if self.check(TokenType::While) {
             return self.parse_while_stmt();
         }
+        if self.check(TokenType::Parallel) {
+            return self.parse_parallel_stmt();
+        }
 
         // Parse expression first, then decide if it's an assignment
         let expr = self.parse_expression()?;
@@ -642,6 +694,32 @@ impl Parser {
             condition,
             body,
         })
+    }
+
+    fn parse_parallel_stmt(&mut self) -> Result<Statement, ParseError> {
+        let loc = self.loc();
+        self.expect(TokenType::Parallel)?;
+        self.expect(TokenType::Colon)?;
+        self.expect(TokenType::Newline)?;
+        self.expect(TokenType::Indent)?;
+
+        // Each branch is a block of statements at this indent level
+        // Branches are separated by `--` comments or blank lines followed by new statements
+        // For simplicity, each statement at this level is its own branch
+        let mut branches: Vec<Vec<Statement>> = Vec::new();
+
+        while !self.check(TokenType::Dedent) && !self.at_end() {
+            self.skip_newlines();
+            if self.check(TokenType::Dedent) || self.at_end() {
+                break;
+            }
+            let stmt = self.parse_statement()?;
+            self.skip_newlines();
+            branches.push(vec![stmt]);
+        }
+        self.expect(TokenType::Dedent)?;
+
+        Ok(Statement::Parallel { loc, branches })
     }
 
     // ── Expressions (precedence climbing) ───────────────────────────────
@@ -919,6 +997,18 @@ impl Parser {
                     name: tok.value.clone(),
                 })
             }
+            TokenType::Null => {
+                self.advance();
+                Ok(Expr::NullLiteral { loc })
+            }
+            TokenType::Await => {
+                self.advance();
+                let inner = self.parse_expression()?;
+                Ok(Expr::AwaitExpr {
+                    loc,
+                    inner: Box::new(inner),
+                })
+            }
             TokenType::LBracket => self.parse_list_literal(),
             TokenType::LParen => {
                 self.advance();
@@ -1190,8 +1280,43 @@ impl Parser {
     fn parse_type_expr(&mut self) -> Result<TypeExpr, ParseError> {
         let loc = self.loc();
         let name = self.expect(TokenType::Identifier)?.value.clone();
+
+        // Generic types: List<Int>, Map<String, Int>, Optional<String>
+        if self.check(TokenType::LessThan) {
+            self.advance();
+            let mut params = Vec::new();
+            params.push(self.parse_type_expr()?);
+            while self.check(TokenType::Comma) {
+                self.advance();
+                params.push(self.parse_type_expr()?);
+            }
+            self.expect(TokenType::GreaterThan)?;
+
+            let base = TypeExpr::Generic { loc: loc.clone(), name, params };
+
+            // Generic types can also have annotations: List<Int> [sorted]
+            if self.check(TokenType::LBracket) {
+                self.advance();
+                let mut annotations = Vec::new();
+                annotations.push(self.expect(TokenType::Identifier)?.value.clone());
+                while self.check(TokenType::Comma) {
+                    self.advance();
+                    annotations.push(self.expect(TokenType::Identifier)?.value.clone());
+                }
+                self.expect(TokenType::RBracket)?;
+                return Ok(TypeExpr::Annotated {
+                    loc,
+                    base: Box::new(base),
+                    annotations,
+                });
+            }
+
+            return Ok(base);
+        }
+
         let base = TypeExpr::Simple { loc: loc.clone(), name };
 
+        // Annotated types: String [pii, sensitive]
         if self.check(TokenType::LBracket) {
             self.advance();
             let mut annotations = Vec::new();
@@ -1231,8 +1356,13 @@ impl Parser {
     fn parse_param(&mut self) -> Result<Param, ParseError> {
         let loc = self.loc();
         let name = self.expect(TokenType::Identifier)?.value.clone();
-        self.expect(TokenType::Colon)?;
-        let type_expr = self.parse_type_expr()?;
+        // Type annotation is optional: `n: Int` or just `n`
+        let type_expr = if self.check(TokenType::Colon) {
+            self.advance();
+            self.parse_type_expr()?
+        } else {
+            TypeExpr::Simple { name: "Any".to_string(), loc: loc.clone() }
+        };
         Ok(Param {
             loc,
             name,

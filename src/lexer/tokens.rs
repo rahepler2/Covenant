@@ -97,12 +97,20 @@ pub enum TokenType {
     Old,
     Use,
     As,
+    Pure,
+
+    // Keywords — concurrency
+    Parallel,
+    Async,
+    Await,
+    Stream,
 
     // Keywords — audit
     Show,
     All,
     Where,
     Since,
+    Null,
 }
 
 impl TokenType {
@@ -143,6 +151,12 @@ impl TokenType {
                 | TokenType::Permissions
                 | TokenType::Has
                 | TokenType::As
+                | TokenType::Pure
+                | TokenType::Parallel
+                | TokenType::Async
+                | TokenType::Await
+                | TokenType::Stream
+                | TokenType::Null
         )
     }
 }
@@ -201,6 +215,12 @@ pub fn keyword_type(word: &str) -> Option<TokenType> {
         "all" => Some(TokenType::All),
         "where" => Some(TokenType::Where),
         "since" => Some(TokenType::Since),
+        "pure" => Some(TokenType::Pure),
+        "parallel" => Some(TokenType::Parallel),
+        "async" => Some(TokenType::Async),
+        "await" => Some(TokenType::Await),
+        "stream" => Some(TokenType::Stream),
+        "null" => Some(TokenType::Null),
         _ => None,
     }
 }

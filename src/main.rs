@@ -11,6 +11,9 @@ use covenant_lang::runtime::{Interpreter, Value};
 use covenant_lang::verify::checker::{verify_program, Severity};
 use covenant_lang::verify::fingerprint::fingerprint_contract;
 use covenant_lang::verify::hasher::compute_intent_hash;
+use covenant_lang::verify::mapper;
+use covenant_lang::verify::type_check;
+use covenant_lang::serve;
 use covenant_lang::vm::compiler::Compiler as BytecodeCompiler;
 use covenant_lang::vm::bytecode::Module as BytecodeModule;
 use covenant_lang::vm::machine::VM;
@@ -94,6 +97,36 @@ enum Commands {
     Init,
     /// List installed packages
     Packages,
+    /// Start HTTP server mapping contracts to API endpoints
+    Serve {
+        /// .cov files to serve (or directory to scan)
+        #[arg(default_value = ".")]
+        files: Vec<PathBuf>,
+        /// Port to listen on
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+        /// Host to bind to
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Directory to serve static files from
+        #[arg(short, long)]
+        static_dir: Option<PathBuf>,
+        /// API route prefix
+        #[arg(long, default_value = "/api")]
+        prefix: String,
+    },
+    /// Show impact map of contracts, scopes, and dependencies
+    Map {
+        /// Directory to scan (defaults to current directory)
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// Show impact for a specific contract
+        #[arg(short, long)]
+        contract: Option<String>,
+        /// Show impact for a specific file
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+    },
 }
 
 fn parse_arg(s: &str) -> Result<(String, String), String> {
@@ -132,8 +165,16 @@ fn main() {
         } => cmd_exec(&file, contract.as_deref(), &arg),
         Commands::Disasm { file } => cmd_disasm(&file),
         Commands::Add { name, global } => cmd_add(&name, global),
+        Commands::Serve {
+            files,
+            port,
+            host,
+            static_dir,
+            prefix,
+        } => cmd_serve(&files, port, &host, static_dir.as_deref(), &prefix),
         Commands::Init => cmd_init(),
         Commands::Packages => cmd_packages(),
+        Commands::Map { dir, contract, file } => cmd_map(&dir, contract.as_deref(), file.as_deref()),
     };
     process::exit(exit_code);
 }
@@ -234,6 +275,9 @@ fn cmd_check(path: &PathBuf) -> i32 {
 
     let results = verify_program(&program, &filename);
 
+    // Run static type checker
+    let type_warnings = type_check::check_types(&program);
+
     let errors: Vec<_> = results
         .iter()
         .filter(|r| matches!(r.severity, Severity::Error | Severity::Critical))
@@ -249,6 +293,9 @@ fn cmd_check(path: &PathBuf) -> i32 {
 
     for r in &errors {
         println!("  ERROR {}: {}", r.code, r.message);
+    }
+    for tw in &type_warnings {
+        println!("  TYPE  {}: {} (line {})", tw.code, tw.message, tw.line);
     }
     for r in &warnings {
         println!("  WARN  {}: {}", r.code, r.message);
@@ -277,16 +324,16 @@ fn cmd_check(path: &PathBuf) -> i32 {
     }
 
     println!();
-    if !errors.is_empty() {
+    let total_errors = errors.len();
+    let total_warnings = warnings.len() + type_warnings.len();
+    if total_errors > 0 {
         println!(
             "{}: FAIL ({} error(s), {} warning(s))",
-            filename,
-            errors.len(),
-            warnings.len()
+            filename, total_errors, total_warnings
         );
         1
-    } else if !warnings.is_empty() {
-        println!("{}: WARN ({} warning(s))", filename, warnings.len());
+    } else if total_warnings > 0 {
+        println!("{}: WARN ({} warning(s))", filename, total_warnings);
         0
     } else {
         println!("{}: OK", filename);
@@ -384,7 +431,10 @@ fn cmd_run(path: &PathBuf, contract_name: Option<&str>, args: &[(String, String)
 
     let target_name = match contract_name {
         Some(name) => name.to_string(),
-        None => program.contracts[0].name.clone(),
+        None => program.contracts.iter()
+            .find(|c| c.name == "main")
+            .unwrap_or(&program.contracts[0])
+            .name.clone(),
     };
 
     // Parse arguments
@@ -432,7 +482,10 @@ fn cmd_run_interpret(path: &PathBuf, contract_name: Option<&str>, args: &[(Strin
 
     let target_name = match contract_name {
         Some(name) => name.to_string(),
-        None => program.contracts[0].name.clone(),
+        None => program.contracts.iter()
+            .find(|c| c.name == "main")
+            .unwrap_or(&program.contracts[0])
+            .name.clone(),
     };
 
     let mut arg_values: HashMap<String, Value> = HashMap::new();
@@ -521,7 +574,10 @@ fn cmd_exec(path: &PathBuf, contract_name: Option<&str>, args: &[(String, String
 
     let target_name = match contract_name {
         Some(name) => name.to_string(),
-        None => module.contracts[0].name.clone(),
+        None => module.contracts.iter()
+            .find(|c| c.name == "main")
+            .unwrap_or(&module.contracts[0])
+            .name.clone(),
     };
 
     let mut arg_values: HashMap<String, Value> = HashMap::new();
@@ -636,6 +692,53 @@ fn json_to_value(json: &serde_json::Value) -> Value {
     }
 }
 
+fn cmd_serve(
+    files: &[PathBuf],
+    port: u16,
+    host: &str,
+    static_dir: Option<&std::path::Path>,
+    prefix: &str,
+) -> i32 {
+    // Collect .cov files
+    let mut cov_files: Vec<PathBuf> = Vec::new();
+
+    for path in files {
+        if path.is_dir() {
+            // Scan directory for .cov files
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.extension().and_then(|e| e.to_str()) == Some("cov") {
+                        cov_files.push(p);
+                    }
+                }
+            }
+        } else if path.extension().and_then(|e| e.to_str()) == Some("cov") {
+            cov_files.push(path.clone());
+        }
+    }
+
+    if cov_files.is_empty() {
+        eprintln!("Error: no .cov files found");
+        return 1;
+    }
+
+    let config = serve::ServeConfig {
+        port,
+        host: host.to_string(),
+        static_dir: static_dir.map(|p| p.to_path_buf()),
+        api_prefix: prefix.to_string(),
+    };
+
+    match serve::start_server(&cov_files, &config) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("Server error: {}", e);
+            1
+        }
+    }
+}
+
 fn cmd_add(name: &str, global: bool) -> i32 {
     use covenant_lang::packages;
 
@@ -725,7 +828,7 @@ fn cmd_packages() -> i32 {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     println!("Built-in modules (always available):");
-    println!("  Tier 1: web, data, json, file, ai, crypto, time, math, text, env");
+    println!("  Tier 1: web, data, json, file, ai, crypto, time, math, text, env, db");
     println!("  Tier 2: http, anthropic, openai, ollama, grok, mcp, mcpx, embeddings, prompts, guardrails");
     println!();
 
@@ -739,6 +842,28 @@ fn cmd_packages() -> i32 {
         }
     }
 
+    0
+}
+
+fn cmd_map(dir: &PathBuf, contract: Option<&str>, file: Option<&std::path::Path>) -> i32 {
+    let map = if let Some(file_path) = file {
+        // Scan a specific file + the project directory for cross-references
+        let project_map = mapper::build_project_map(dir);
+        // If file not in project dir, also scan it
+        let file_str = file_path.to_string_lossy().to_string();
+        print!("{}", mapper::format_file_impact(&project_map, &file_str));
+        return 0;
+    } else {
+        mapper::build_project_map(dir)
+    };
+
+    if let Some(contract_name) = contract {
+        // Targeted: show impact for a specific contract
+        print!("{}", mapper::format_contract_impact(&map, contract_name));
+    } else {
+        // Full project map
+        print!("{}", mapper::format_full_map(&map));
+    }
     0
 }
 

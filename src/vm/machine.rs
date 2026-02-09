@@ -27,6 +27,7 @@ struct CallFrame {
     local_names: Vec<String>,
     stack_base: usize,
     contract_name: String,
+    return_type: Option<String>,
 }
 
 /// The Covenant Virtual Machine
@@ -75,9 +76,27 @@ impl VM {
             }
         }
 
+        // Validate argument types
+        for (i, type_name) in contract.param_types.iter().enumerate() {
+            if type_name == "Any" || i >= locals.len() {
+                continue;
+            }
+            if !value_matches_type_name(&locals[i], type_name) {
+                return Err(RuntimeError {
+                    message: format!(
+                        "Type error in '{}': parameter '{}' expects {}, got {} ({})",
+                        contract.name,
+                        contract.params.get(i).map(|s| s.as_str()).unwrap_or("?"),
+                        type_name, locals[i].type_name(), locals[i]
+                    ),
+                });
+            }
+        }
+
         let code = contract.code.clone();
         let local_names = contract.local_names.clone();
         let contract_name = contract.name.clone();
+        let return_type = contract.return_type.clone();
 
         self.call_depth = 1;
         self.frames.push(CallFrame {
@@ -88,6 +107,7 @@ impl VM {
             local_names,
             stack_base: 0,
             contract_name,
+            return_type,
         });
 
         self.run()
@@ -260,6 +280,18 @@ impl VM {
             Instruction::Return => {
                 let value = self.pop();
                 let frame = self.frames.pop().unwrap();
+                // Validate return type if declared
+                if let Some(ref ret_type) = frame.return_type {
+                    if !value_matches_type_name(&value, ret_type) {
+                        return Err(RuntimeError {
+                            message: format!(
+                                "Type error in '{}': expected return type {}, got {} ({})",
+                                frame.contract_name, ret_type,
+                                value.type_name(), value
+                            ),
+                        });
+                    }
+                }
                 self.stack.truncate(frame.stack_base);
                 self.stack.push(value);
                 self.call_depth = self.call_depth.saturating_sub(1);
@@ -606,9 +638,27 @@ impl VM {
             }
         }
 
+        // Validate argument types
+        for (i, type_name) in contract.param_types.iter().enumerate() {
+            if type_name == "Any" || i >= locals.len() {
+                continue;
+            }
+            if !value_matches_type_name(&locals[i], type_name) {
+                return Err(RuntimeError {
+                    message: format!(
+                        "Type error in '{}': parameter '{}' expects {}, got {} ({})",
+                        contract.name,
+                        contract.params.get(i).map(|s| s.as_str()).unwrap_or("?"),
+                        type_name, locals[i].type_name(), locals[i]
+                    ),
+                });
+            }
+        }
+
         let code = contract.code.clone();
         let local_names = contract.local_names.clone();
         let contract_name = contract.name.clone();
+        let return_type = contract.return_type.clone();
 
         self.call_depth += 1;
         self.frames.push(CallFrame {
@@ -619,6 +669,7 @@ impl VM {
             local_names,
             stack_base: self.stack.len(),
             contract_name,
+            return_type,
         });
 
         Ok(())
@@ -913,5 +964,34 @@ fn as_f64(v: &Value) -> Result<f64, RuntimeError> {
         _ => Err(RuntimeError {
             message: format!("Expected number, got {}", v.type_name()),
         }),
+    }
+}
+
+/// Check if a runtime Value matches a type name string (for VM type checking)
+fn value_matches_type_name(value: &Value, type_name: &str) -> bool {
+    match type_name {
+        "Any" => true,
+        "Int" | "Integer" => matches!(value, Value::Int(_)),
+        "Float" | "Double" => matches!(value, Value::Float(_) | Value::Int(_)),
+        "String" | "Str" => matches!(value, Value::Str(_)),
+        "Bool" | "Boolean" => matches!(value, Value::Bool(_)),
+        "List" | "Array" => matches!(value, Value::List(_)),
+        "Null" | "None" => matches!(value, Value::Null),
+        "Number" | "Numeric" => matches!(value, Value::Int(_) | Value::Float(_)),
+        _ => {
+            // Generic types like List<Int> — just check base
+            if type_name.starts_with("List<") {
+                return matches!(value, Value::List(_));
+            }
+            if type_name.starts_with("Optional<") {
+                return matches!(value, Value::Null) || true; // accept anything for Optional
+            }
+            // Custom object types
+            if let Value::Object(obj_type, _) = value {
+                obj_type == type_name
+            } else {
+                true // unknown types pass (gradual typing)
+            }
+        }
     }
 }

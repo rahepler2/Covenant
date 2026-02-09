@@ -41,9 +41,36 @@ contract name(param: Type) -> ReturnType
 | Field | Required | Description |
 |-------|----------|-------------|
 | `intent` | Yes | Human-readable purpose string |
-| `scope` | Yes | Dotted path (e.g., `banking.transfers`) |
-| `risk` | Yes | `low`, `medium`, `high`, or `critical` |
+| `scope` | Yes | Enforced namespace (e.g., `banking.transfers`) |
+| `risk` | Yes | Verification strictness: `low`, `medium`, `high`, or `critical` |
 | `requires` | No | List of required capabilities |
+
+### Scope (Namespace)
+
+Scope is an enforced namespace, validated at compile time:
+
+- **S001**: Scope is required — every file must have `scope: domain.module`
+- **S002**: Must have at least 2 dot-separated segments (e.g., `finance.transfers`, not just `finance`)
+- **S002**: All segments must be lowercase (`a-z`, `0-9`, `_`)
+- **S003**: Scope should relate to the intent text (warning if no segment appears in the intent)
+
+```
+scope: finance.transfers     -- valid
+scope: demo.hello            -- valid
+scope: finance               -- ERROR: S002 (needs 2+ segments)
+scope: Finance.Transfers     -- ERROR: S002 (must be lowercase)
+```
+
+### Risk (Verification Strictness)
+
+Risk controls how strict the compiler is, not what the code does:
+
+| Level | Missing pre/postcondition | Missing effects | IFC |
+|-------|--------------------------|----------------|-----|
+| `low` | Silent | Silent | Basic |
+| `medium` | Silent | Silent | Basic |
+| `high` | **Error** | **Error** | Full |
+| `critical` | **Error** | **Error** | Full + flow tracing |
 
 ### Use Declarations
 
@@ -57,6 +84,8 @@ use openai as ai
 Built-in modules (all 20) need no installation. File-based packages are loaded from `./covenant_packages/` or `~/.covenant/packages/`.
 
 ## Contracts
+
+Full form:
 
 ```
 contract name(param1: Type1, param2: Type2) -> ReturnType
@@ -87,15 +116,52 @@ contract name(param1: Type1, param2: Type2) -> ReturnType
     return default_value
 ```
 
+### Concise Forms
+
+**Expression body** — for one-liner pure functions:
+
+```
+contract square(n: Int) -> Int = n * n
+contract greet(name: String) -> String = "Hello, " + name
+```
+
+**Minimal body** — just the implementation, no ceremony:
+
+```
+contract say_hello()
+  body:
+    print("Hello!")
+```
+
+**`pure` keyword** — shorthand for `effects: touches_nothing_else`:
+
+```
+contract add(a: Int, b: Int) -> Int
+  pure
+  body:
+    return a + b
+```
+
+**Optional return type** — omit `-> Type` when not needed:
+
+```
+contract log_message(msg: String)
+  body:
+    print(msg)
+```
+
+At `low` and `medium` risk, missing preconditions, postconditions, and effects produce no warnings. At `high` and `critical` risk, they become errors.
+
 ### Sections
 
-All sections except `body` are optional.
+All sections except `body` are optional (or use expression-body `=` instead).
 
 | Section | Purpose |
 |---------|---------|
 | `precondition` | Boolean expressions that must be true before body executes |
 | `postcondition` | Boolean expressions that must be true after body executes. Can use `result` and `old()` |
 | `effects` | Declared side effects: `modifies`, `reads`, `emits`, `touches_nothing_else` |
+| `pure` | Shorthand for `effects: touches_nothing_else` |
 | `permissions` | Access control: `grants`, `denies`, `escalation` |
 | `body` | The implementation |
 | `on_failure` | Fallback logic if conditions fail |
@@ -158,8 +224,60 @@ The Intent Verification Engine checks that your body matches these declarations.
 | `String` | UTF-8 string | `"hello"`, `"line\n"` |
 | `Bool` | Boolean | `true`, `false` |
 | `List` | Ordered collection | `[1, 2, 3]`, `[]` |
+| `List<T>` | Typed list | `List<Int>`, `List<String>` |
+| `Map<K, V>` | Key-value map | `Map<String, Int>` |
+| `Optional<T>` | Nullable type | `Optional<String>` |
 | `Object` | Named record with fields | `Person(name: "Alice")` |
 | `Null` | Absence of value | `null` |
+| `Any` | Any type (untyped) | implicit when type omitted |
+
+### Type Checking
+
+Types are checked at both compile time and runtime:
+
+```
+-- Static: `covenant check` catches type errors before running
+contract square(n: Int) -> Int = n * n
+square("hello")   -- T001: argument 'n' expects Int, got String
+
+-- Runtime: type errors are caught when contracts execute
+contract get_name() -> String
+  body:
+    return 42      -- Type error: expected String, got Int
+```
+
+Error codes:
+- **T001**: argument type mismatch
+- **T002**: return type mismatch
+- **T003**: operator type mismatch (`"hello" * 5`)
+- **T004**: wrong argument count
+
+### Gradual Typing
+
+Parameter types are optional. Omit them for scripting-style code:
+
+```
+-- Fully typed
+contract add(a: Int, b: Int) -> Int = a + b
+
+-- Untyped (accepts any arguments)
+contract add(a, b) = a + b
+
+-- Mixed
+contract greet(name: String, excited) -> String
+  body:
+    if excited:
+      return "HI " + name + "!!!"
+    return "Hello, " + name
+
+-- Generic types
+contract sum_list(items: List<Int>) -> Int
+  body:
+    total = 0
+    for item in items:
+      total = total + item
+    return total
+```
 
 ### Objects (Constructors)
 
@@ -288,6 +406,38 @@ emit TransferCompleted(from, to, amount)
 emit UserLoggedIn(user_id)
 ```
 
+### Parallel
+
+Execute independent work concurrently:
+
+```
+parallel:
+  users = fetch_users()
+  posts = fetch_posts()
+  stats = fetch_stats()
+```
+
+Each statement in the `parallel:` block runs as an independent branch. The block completes when all branches finish.
+
+### Async Contracts
+
+Mark contracts that can run concurrently:
+
+```
+async contract fetch_data(url: String) -> String
+  body:
+    response = web.get(url)
+    return response.body
+```
+
+### Await
+
+Explicitly wait for an async result:
+
+```
+result = await slow_computation(1000)
+```
+
 ## Built-in Functions
 
 | Function | Description | Returns |
@@ -336,9 +486,15 @@ tmpl = prompts.template("Hi {name}", name: "Alice")
 
 ## Verification
 
-### Intent Verification Engine (IVE)
+Run `covenant check file.cov` to verify your code. The checker runs multiple phases:
 
-Run `covenant check file.cov` to verify:
+### Phase 0: Scope Namespace (S001-S003)
+
+- **S001**: Missing scope declaration (error)
+- **S002**: Invalid scope format — needs 2+ lowercase segments (error)
+- **S003**: Scope doesn't relate to intent text (warning)
+
+### Phase 1: Intent Verification Engine (E001-E005, W001-W008, I001-I002)
 
 - **E001**: Body modifies state not declared in `effects`
 - **E003**: `touches_nothing_else` violated — body calls undeclared functions
@@ -372,6 +528,16 @@ covenant fingerprint file.cov
 ```
 
 Shows reads, mutations, calls, events, old() references, branching, looping, recursion, and the intent hash for each contract.
+
+### Impact Mapping
+
+```bash
+covenant map                           # full project map
+covenant map --contract transfer       # specific contract impact
+covenant map --file transfer.cov       # specific file impact
+```
+
+Shows scope-grouped contract trees with effects, cross-scope dependencies, and shared state contention. See [CLI Reference](cli.md#covenant-map-dir-options) for details.
 
 ## Execution Model
 

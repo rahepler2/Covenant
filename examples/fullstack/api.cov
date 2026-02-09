@@ -1,0 +1,87 @@
+-- Task Manager API — Covenant full-stack example
+-- Demonstrates: db module, serve command, contracts as endpoints
+
+intent: "CRUD API for task management with SQLite persistence"
+scope: app.tasks
+risk: medium
+
+-- Initialize the database (runs automatically on server start)
+contract init()
+  precondition:
+    true
+
+  effects:
+    modifies [database]
+
+  body:
+    conn = db.open("tasks.db")
+    db.execute(conn, "CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, done INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+    return true
+
+-- List all tasks (GET /api/list_tasks)
+contract list_tasks() -> List
+  precondition:
+    true
+
+  postcondition:
+    true
+
+  body:
+    conn = db.open("tasks.db")
+    tasks = db.query(conn, "SELECT id, title, done, created_at FROM tasks ORDER BY id DESC")
+    return tasks
+
+-- Get a single task by ID (GET /api/get_task?id=1)
+contract get_task(id: Int) -> Object
+  precondition:
+    id > 0
+
+  body:
+    conn = db.open("tasks.db")
+    rows = db.query(conn, "SELECT id, title, done, created_at FROM tasks WHERE id = ?", [id])
+    if rows == []:
+      return null
+    return rows[0]
+
+-- Create a new task (POST /api/create_task)
+contract create_task(title: String) -> Object
+  precondition:
+    title != ""
+
+  effects:
+    modifies [database]
+
+  postcondition:
+    result != null
+
+  body:
+    conn = db.open("tasks.db")
+    db.execute(conn, "INSERT INTO tasks (title) VALUES (?)", [title])
+    rows = db.query(conn, "SELECT id, title, done, created_at FROM tasks ORDER BY id DESC LIMIT 1")
+    return rows[0]
+
+-- Mark a task as done (POST /api/complete_task)
+contract complete_task(id: Int) -> Bool
+  precondition:
+    id > 0
+
+  effects:
+    modifies [database]
+
+  body:
+    conn = db.open("tasks.db")
+    db.execute(conn, "UPDATE tasks SET done = 1 WHERE id = ?", [id])
+    return true
+
+-- Delete a task (POST /api/delete_task)
+contract delete_task(id: Int) -> Bool
+  precondition:
+    id > 0
+
+  effects:
+    modifies [database]
+
+  body:
+    conn = db.open("tasks.db")
+    db.execute(conn, "DELETE FROM tasks WHERE id = ?", [id])
+    return true

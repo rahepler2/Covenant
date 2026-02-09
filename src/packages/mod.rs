@@ -19,7 +19,7 @@ use crate::parser::Parser;
 /// All built-in module names (stdlib tier 1 + tier 2)
 const BUILTIN_MODULES: &[&str] = &[
     // Tier 1 — stdlib
-    "web", "data", "json", "file", "ai", "crypto", "time", "math", "text", "env",
+    "web", "data", "json", "file", "ai", "crypto", "time", "math", "text", "env", "db",
     // Tier 2 — AI-age libraries
     "http", "anthropic", "openai", "ollama", "grok", "mcp", "mcpx",
     "embeddings", "prompts", "guardrails",

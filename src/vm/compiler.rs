@@ -88,10 +88,14 @@ impl Compiler {
         let local_count = cc.locals.len() as u16;
         let local_names = cc.locals.clone();
         let params = contract.params.iter().map(|p| p.name.clone()).collect();
+        let param_types = contract.params.iter().map(|p| p.type_expr.display_name()).collect();
+        let return_type = contract.return_type.as_ref().map(|t| t.display_name());
 
         CompiledContract {
             name: contract.name.clone(),
             params,
+            param_types,
+            return_type,
             local_count,
             local_names,
             code: cc.instructions,
@@ -206,7 +210,7 @@ impl<'a> ContractCompiler<'a> {
     }
 
     fn is_stdlib_module(name: &str) -> bool {
-        matches!(name, "web" | "data" | "json" | "file" | "ai" | "crypto" | "time" | "math" | "text" | "env"
+        matches!(name, "web" | "data" | "json" | "file" | "ai" | "crypto" | "time" | "math" | "text" | "env" | "db"
             | "http" | "anthropic" | "openai" | "ollama" | "grok" | "mcp" | "mcpx"
             | "embeddings" | "prompts" | "guardrails")
     }
@@ -322,6 +326,13 @@ impl<'a> ContractCompiler<'a> {
                 self.compile_statements(body);
                 self.emit_loop(loop_start);
                 self.patch_jump(end_jump);
+            }
+
+            // Compile parallel branches sequentially (placeholder until real concurrency)
+            Statement::Parallel { branches, .. } => {
+                for branch in branches {
+                    self.compile_statements(branch);
+                }
             }
         }
     }
@@ -459,6 +470,15 @@ impl<'a> ContractCompiler<'a> {
                 self.compile_expression(object);
                 self.compile_expression(index);
                 self.emit(Instruction::ListIndex);
+            }
+
+            Expr::NullLiteral { .. } => {
+                self.emit(Instruction::LoadNull);
+            }
+
+            // Compile inner expression directly (placeholder until real async)
+            Expr::AwaitExpr { inner, .. } => {
+                self.compile_expression(inner);
             }
         }
     }

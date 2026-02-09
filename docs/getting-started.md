@@ -37,69 +37,129 @@ covenant --version
 Create a file called `hello.cov`:
 
 ```
-intent: "Say hello"
-scope: demo
+intent: "Say hello to the world"
+scope: demo.hello
 risk: low
 
-contract main() -> Int
-  precondition:
-    true
-
-  postcondition:
-    result == 0
-
+contract main()
   body:
     print("Hello from Covenant!")
-    return 0
 ```
 
 Run it:
 
 ```bash
-covenant run hello.cov -c main
+covenant run hello.cov
 ```
 
 Output:
 ```
 Hello from Covenant!
-0
+null
 ```
 
-## Understanding the Structure
+That's it — 7 lines. The header (intent, scope, risk) is required, but the contract itself is just `body:` and your code. No ceremony for simple things.
 
-Every `.cov` file has a **header** and one or more **contracts**.
+## Core Concepts
 
-### File Header
+Before diving deeper, let's understand the three things that make Covenant different from other languages.
 
-```
-intent: "What this file does — human-readable description"
-scope: domain.module.name
-risk: low
-```
+### What is a Contract?
 
-- **intent** — Describes the purpose. The Intent Verification Engine checks that your code matches this.
-- **scope** — Dotted path for organization (like a package name).
-- **risk** — `low`, `medium`, `high`, or `critical`. Higher risk levels enforce stricter verification.
+In most languages, you write **functions** — blocks of code that take input and produce output. A function makes no promises about what it will do. It could crash, return garbage, or silently corrupt your data.
 
-### Contracts
-
-Contracts are the building blocks of Covenant. Think of them as functions with built-in correctness guarantees:
+In Covenant, you write **contracts**. A contract is like a function, but with built-in guarantees:
 
 ```
 contract greet(name: String) -> String
   precondition:
-    name != ""
+    name != ""          -- "I promise I won't run unless name is non-empty"
 
   postcondition:
-    result != ""
+    result != ""        -- "I promise to return a non-empty string"
 
   body:
     return "Hello, " + name + "!"
 ```
 
-- **precondition** — Must be true before the body runs. If it fails, execution stops.
-- **postcondition** — Must be true after the body runs. Uses `result` to refer to the return value.
-- **body** — The actual implementation.
+Think of it like a legal contract: both sides have obligations. The **caller** must satisfy the preconditions (provide valid input). The **contract** must satisfy the postconditions (deliver valid output). If either side breaks the deal, execution stops immediately instead of silently producing bad results.
+
+| Section | Purpose | Required? |
+|---------|---------|-----------|
+| `precondition` | What must be true **before** the code runs | No, but recommended |
+| `postcondition` | What must be true **after** the code runs. Use `result` for the return value, `old(x)` for pre-execution values | No, but recommended |
+| `effects` | What the code is allowed to touch (read, modify, emit) | No, but recommended |
+| `body` | The actual implementation | **Yes** |
+| `on_failure` | Fallback if pre/postconditions fail | No |
+
+The more you declare, the more Covenant can verify. At higher risk levels, missing sections become compile errors.
+
+**Shorthand forms** — for simple contracts, you don't need all the ceremony:
+
+```
+-- Expression body: one-liner for pure computations
+contract square(n: Int) -> Int = n * n
+
+-- Just a body: no pre/post/effects needed at low risk
+contract say_hi()
+  body:
+    print("Hi!")
+
+-- `pure` keyword: shorthand for declaring no side effects
+contract add(a: Int, b: Int) -> Int
+  pure
+  body:
+    return a + b
+```
+
+Return type (`-> Type`) is also optional — omit it when you don't need to constrain the output. Parameter types are also optional — `contract add(a, b) = a + b` works for scripting-style code.
+
+### What is Scope?
+
+Every `.cov` file must declare a **scope** — a namespace that says where this code belongs in your project. Think of it like a package path in Java or Go:
+
+```
+scope: finance.transfers
+```
+
+This tells Covenant (and other developers) that this file lives in the `finance` domain, specifically the `transfers` module. Scope is **enforced at compile time**:
+
+- **Must have at least 2 segments**: `finance.transfers` is valid, `finance` alone is not.
+- **Must be lowercase**: `Finance.Transfers` is an error.
+- **Must relate to intent**: If your scope says `finance.transfers` but your intent says "Process sensor data", you'll get a warning.
+
+Why does this matter? Because scope creates a traceable namespace across your entire codebase. You can use `covenant map` to see which contracts in `finance.transfers` affect `finance.ledger`, track dependencies across scopes, and understand the blast radius of changes.
+
+```bash
+-- See the full project dependency map
+covenant map
+
+-- See what a specific contract impacts
+covenant map --contract transfer
+
+-- See all contracts in a specific file
+covenant map --file transfer.cov
+```
+
+### What is Risk?
+
+Risk is **not** about how dangerous your code is. It's about **how strict the compiler should be** when checking your code:
+
+```
+risk: low       -- No warnings, maximum flexibility
+risk: medium    -- No warnings, moderate verification
+risk: high      -- ERRORS for missing preconditions, postconditions, effects
+risk: critical  -- ERRORS for anything undeclared + strictest flow checking
+```
+
+For a hello-world demo, `risk: low` is fine — the compiler won't bother you about missing sections. For a financial transfer or medical system, `risk: high` or `risk: critical` forces you to declare everything, because the consequences of bugs are severe.
+
+| Risk Level | Missing precondition | Missing postcondition | Missing effects | IFC checks |
+|------------|---------------------|----------------------|----------------|------------|
+| `low` | Silent | Silent | Silent | Basic |
+| `medium` | Silent | Silent | Silent | Basic |
+| `high` | **Error** | **Error** | **Error** | Full |
+| `critical` | **Error** | **Error** | **Error** | Full + flow tracing |
 
 ## Variables and Types
 
@@ -219,7 +279,7 @@ Capitalized names create objects:
 
 ## Calling Other Contracts
 
-Contracts can call each other:
+Contracts can call each other — just like functions calling functions:
 
 ```
 contract add(a: Int, b: Int) -> Int
@@ -243,7 +303,7 @@ contract main() -> Int
 
 ## Using the Standard Library
 
-Covenant has 20 built-in modules. Call them with `module.method()`:
+Covenant has 20 built-in modules. Call them with `module.method()` — no imports needed:
 
 ```
   body:
@@ -275,7 +335,7 @@ Covenant ships with built-in clients for LLM providers:
 
 ```
   body:
-    -- Local Ollama
+    -- Local Ollama (free, runs on your machine)
     answer = ollama.chat("What is Rust?")
 
     -- OpenAI (needs OPENAI_API_KEY env var)
@@ -284,14 +344,16 @@ Covenant ships with built-in clients for LLM providers:
     -- Anthropic (needs ANTHROPIC_API_KEY env var)
     answer = anthropic.chat("Write a haiku about code")
 
-    -- Vector embeddings
+    -- Vector embeddings (for semantic search / RAG)
     vec = ollama.embed("some text to embed")
     similarity = embeddings.cosine(vec1, vec2)
 ```
 
+The `embeddings` module is pure math — cosine similarity, dot products, nearest-neighbor search. The actual vectorization happens through LLM providers like `ollama.embed()` or `openai.embed()`.
+
 ## Effects and Verification
 
-Contracts can declare their effects — what they read, modify, and emit:
+Contracts can declare their side effects — what they read, modify, and emit. The compiler verifies your code matches these declarations:
 
 ```
 contract transfer(from: Account, to: Account, amount: Float) -> Bool
@@ -315,13 +377,30 @@ contract transfer(from: Account, to: Account, amount: Float) -> Bool
     return true
 ```
 
-The `old()` function in postconditions refers to a value before the body executed.
+The `old()` function in postconditions captures a value **before** the body ran, so you can assert how things changed.
 
 Run verification:
 
 ```bash
 covenant check transfer.cov
 ```
+
+## Impact Mapping
+
+Use `covenant map` to see what contracts affect across your codebase:
+
+```bash
+-- Full project map: all scopes, contracts, effects, dependencies
+covenant map
+
+-- What does the 'transfer' contract impact?
+covenant map --contract transfer
+
+-- What's in this file and what does it touch?
+covenant map --file transfer.cov
+```
+
+This gives you a tree showing each contract's reads, writes, emits, calls, and cross-scope dependencies — so you can understand the blast radius of any change.
 
 ## Project Setup
 

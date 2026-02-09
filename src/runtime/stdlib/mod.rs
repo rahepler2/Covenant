@@ -14,6 +14,7 @@ pub mod time_mod;
 pub mod math;
 pub mod text;
 pub mod env;
+pub mod db;
 
 // Tier 2 — AI-age libraries
 pub mod http_client;
@@ -32,7 +33,7 @@ use std::collections::HashMap;
 
 const STDLIB_MODULES: &[&str] = &[
     // Tier 1
-    "web", "data", "json", "file", "ai", "crypto", "time", "math", "text", "env",
+    "web", "data", "json", "file", "ai", "crypto", "time", "math", "text", "env", "db",
     // Tier 2
     "http", "anthropic", "openai", "ollama", "grok", "mcp", "mcpx",
     "embeddings", "prompts", "guardrails",
@@ -62,6 +63,7 @@ pub fn call_module_method(
         "math" => math::call(method, args, kwargs),
         "text" => text::call(method, args, kwargs),
         "env" => env::call(method, args, kwargs),
+        "db" => db::call(method, args, kwargs),
         // Tier 2
         "http" => http_client::call(method, args, kwargs),
         "anthropic" => anthropic::call(method, args, kwargs),
@@ -80,7 +82,7 @@ pub fn call_module_method(
 }
 
 /// Types created by stdlib that have methods (DataFrame, HttpResponse)
-const STDLIB_TYPES: &[&str] = &["DataFrame", "HttpResponse"];
+const STDLIB_TYPES: &[&str] = &["DataFrame", "HttpResponse", "Database"];
 
 /// Check if a type name belongs to the stdlib
 pub fn is_stdlib_type(type_name: &str) -> bool {
@@ -98,6 +100,7 @@ pub fn call_type_method(
     match type_name {
         "DataFrame" => data::call_method(obj_fields, method, args, kwargs),
         "HttpResponse" => web::call_response_method(obj_fields, method, args, kwargs),
+        "Database" => db::call_db_method(obj_fields, method, args, kwargs),
         _ => Err(RuntimeError {
             message: format!("No methods for stdlib type: {}", type_name),
         }),

@@ -154,6 +154,11 @@ impl ASTWalker {
                 self.walk_expr(condition, fp);
                 self.walk_statements(body, depth + 1, fp);
             }
+            Statement::Parallel { branches, .. } => {
+                for branch in branches {
+                    self.walk_statements(branch, depth + 1, fp);
+                }
+            }
         }
     }
 
@@ -260,6 +265,12 @@ impl ASTWalker {
             Expr::IndexAccess { object, index, .. } => {
                 self.walk_expr(object, fp);
                 self.walk_expr(index, fp);
+            }
+            Expr::NullLiteral { .. } => {
+                // No fingerprint data from null literal
+            }
+            Expr::AwaitExpr { inner, .. } => {
+                self.walk_expr(inner, fp);
             }
         }
     }

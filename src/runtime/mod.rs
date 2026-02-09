@@ -92,6 +92,68 @@ impl Value {
         }
     }
 
+    /// Check if this value matches the declared type expression.
+    /// Returns true if the value is compatible with the type.
+    pub fn matches_type(&self, type_expr: &TypeExpr) -> bool {
+        let type_name = match type_expr {
+            TypeExpr::Simple { name, .. } => name.as_str(),
+            TypeExpr::Annotated { base, .. } => return self.matches_type(base),
+            TypeExpr::Generic { name, params, .. } => {
+                // List<T> — check that it's a list and elements match T
+                if name == "List" {
+                    if let Value::List(items) = self {
+                        if let Some(elem_type) = params.first() {
+                            return items.iter().all(|item| item.matches_type(elem_type));
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+                // Map<K, V> — check object fields
+                if name == "Map" {
+                    return matches!(self, Value::Object(..));
+                }
+                // Optional<T> — null or matches T
+                if name == "Optional" {
+                    if matches!(self, Value::Null) {
+                        return true;
+                    }
+                    if let Some(inner) = params.first() {
+                        return self.matches_type(inner);
+                    }
+                    return true;
+                }
+                // Other generic types — check base name
+                name.as_str()
+            }
+            TypeExpr::List { element_type, .. } => {
+                if let Value::List(items) = self {
+                    return items.iter().all(|item| item.matches_type(element_type));
+                }
+                return false;
+            }
+        };
+        match type_name {
+            "Any" => true,
+            "Int" | "Integer" => matches!(self, Value::Int(_)),
+            "Float" | "Double" => matches!(self, Value::Float(_) | Value::Int(_)),
+            "String" | "Str" => matches!(self, Value::Str(_)),
+            "Bool" | "Boolean" => matches!(self, Value::Bool(_)),
+            "List" | "Array" => matches!(self, Value::List(_)),
+            "Null" | "None" => matches!(self, Value::Null),
+            "Number" | "Numeric" => matches!(self, Value::Int(_) | Value::Float(_)),
+            _ => {
+                // Custom types: check object type name
+                if let Value::Object(obj_type, _) = self {
+                    obj_type == type_name
+                } else {
+                    // At low risk, unknown types pass (gradual typing)
+                    true
+                }
+            }
+        }
+    }
+
     fn as_number(&self) -> Result<f64, RuntimeError> {
         match self {
             Value::Int(n) => Ok(*n as f64),
@@ -157,10 +219,30 @@ impl Interpreter {
             }
         })?;
 
-        // Push a new scope for the contract
+        // Push a new scope and validate argument types
         let mut scope = HashMap::new();
+        for param in &contract.params {
+            if let Some(value) = args.get(&param.name) {
+                // Validate type if declared (skip "Any" for untyped params)
+                if param.type_expr.display_name() != "Any" && !value.matches_type(&param.type_expr) {
+                    self.call_depth -= 1;
+                    return Err(RuntimeError {
+                        message: format!(
+                            "Type error in '{}': parameter '{}' expects {}, got {} ({})",
+                            contract_name, param.name,
+                            param.type_expr.display_name(),
+                            value.type_name(), value
+                        ),
+                    });
+                }
+                scope.insert(param.name.clone(), value.clone());
+            }
+        }
+        // Also insert any extra args not in params (positional overflow)
         for (name, value) in &args {
-            scope.insert(name.clone(), value.clone());
+            if !scope.contains_key(name) {
+                scope.insert(name.clone(), value.clone());
+            }
         }
         self.scopes.push(scope);
 
@@ -215,6 +297,22 @@ impl Interpreter {
                         ),
                     });
                 }
+            }
+        }
+
+        // Validate return type if declared
+        if let Some(ref ret_type) = contract.return_type {
+            if !return_value.matches_type(ret_type) {
+                self.old_snapshot = None;
+                self.call_depth -= 1;
+                self.scopes.pop();
+                return Err(RuntimeError {
+                    message: format!(
+                        "Type error in '{}': expected return type {}, got {} ({})",
+                        contract_name, ret_type.display_name(),
+                        return_value.type_name(), return_value
+                    ),
+                });
             }
         }
 
@@ -321,6 +419,17 @@ impl Interpreter {
                         return Err(RuntimeError {
                             message: "Loop exceeded maximum iteration limit".to_string(),
                         });
+                    }
+                }
+                Ok(StmtResult::Continue)
+            }
+            // Execute parallel branches sequentially for now (simulated parallelism).
+            // TODO: real threading / async execution in a future phase
+            Statement::Parallel { branches, .. } => {
+                for branch in branches {
+                    match self.exec_statements(branch)? {
+                        StmtResult::Return(val) => return Ok(StmtResult::Return(val)),
+                        StmtResult::Continue => {}
                     }
                 }
                 Ok(StmtResult::Continue)
@@ -775,6 +884,9 @@ impl Interpreter {
                     }),
                 }
             }
+            Expr::NullLiteral { .. } => Ok(Value::Null),
+            // Evaluate inner expression directly (no real async yet)
+            Expr::AwaitExpr { inner, .. } => self.eval_expr(inner),
         }
     }
 

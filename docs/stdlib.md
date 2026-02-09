@@ -1,6 +1,6 @@
 # Standard Library Reference
 
-Covenant ships with 20 built-in modules. Call any method with `module.method()` — no imports needed, though `use module` is recommended for clarity.
+Covenant ships with 21 built-in modules. Call any method with `module.method()` — no imports needed, though `use module` is recommended for clarity.
 
 ## Tier 1 — Core Modules
 
@@ -168,6 +168,40 @@ summary = ai.summarize("Long text here...")
 category = ai.classify("I love this!", categories: ["positive", "negative"])
 data = ai.extract("Alice is 30 years old", fields: ["name", "age"])
 ```
+
+### db
+
+SQLite database for persistent storage.
+
+```
+-- Open or create a database
+conn = db.open("myapp.db")
+
+-- Create tables
+db.execute(conn, "CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE
+)")
+
+-- Insert with parameterized queries
+db.execute(conn, "INSERT INTO users (name, email) VALUES (?, ?)", ["Alice", "alice@example.com"])
+
+-- Query returns List of Row objects
+rows = db.query(conn, "SELECT * FROM users WHERE name = ?", ["Alice"])
+print(rows[0].name)                   -- "Alice"
+print(rows[0].email)                  -- "alice@example.com"
+
+-- List tables
+tables = db.tables(conn)              -- ["users"]
+
+-- Close (safe no-op)
+db.close(conn)
+```
+
+Methods: `open`, `execute`, `query`, `tables`, `close`. Uses `?` placeholders for parameterized queries.
+
+The Database object also supports method calls: `conn.query(sql)`, `conn.execute(sql)`, `conn.tables()`.
 
 ---
 
