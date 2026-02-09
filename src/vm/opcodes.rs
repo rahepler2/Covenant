@@ -130,6 +130,14 @@ pub enum Instruction {
     // ── Capabilities ─────────────────────────────────────────────────
     /// Pop capability, pop subject, push bool (always true at runtime)
     HasCapability,
+
+    // ── Error Handling ────────────────────────────────────────────────
+    /// Push exception handler (catch_offset is absolute instruction index)
+    SetHandler(u32),
+    /// Remove top exception handler
+    ClearHandler,
+    /// Store error string from stack into local slot
+    CatchBind(u16),
 }
 
 impl fmt::Display for Instruction {
@@ -176,6 +184,9 @@ impl fmt::Display for Instruction {
             Instruction::EndOld => write!(f, "END_OLD"),
             Instruction::EmitEvent(n, a) => write!(f, "EMIT_EVENT c{} args={}", n, a),
             Instruction::HasCapability => write!(f, "HAS_CAPABILITY"),
+            Instruction::SetHandler(o) => write!(f, "SET_HANDLER @{}", o),
+            Instruction::ClearHandler => write!(f, "CLEAR_HANDLER"),
+            Instruction::CatchBind(i) => write!(f, "CATCH_BIND {}", i),
         }
     }
 }

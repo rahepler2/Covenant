@@ -441,6 +441,11 @@ impl<'a> FlowTracker<'a> {
                     self.track_statements(branch);
                 }
             }
+            Statement::TryCatch { try_body, catch_body, finally_body, .. } => {
+                self.track_statements(try_body);
+                self.track_statements(catch_body);
+                self.track_statements(finally_body);
+            }
         }
     }
 

@@ -212,6 +212,11 @@ fn check_stmt(
                 check_stmts(branch, env, sigs, expected_return, contract_name, warnings);
             }
         }
+        Statement::TryCatch { try_body, catch_body, finally_body, .. } => {
+            check_stmts(try_body, env, sigs, expected_return, contract_name, warnings);
+            check_stmts(catch_body, env, sigs, expected_return, contract_name, warnings);
+            check_stmts(finally_body, env, sigs, expected_return, contract_name, warnings);
+        }
     }
 }
 

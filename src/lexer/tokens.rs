@@ -105,6 +105,11 @@ pub enum TokenType {
     Await,
     Stream,
 
+    // Keywords — error handling
+    Try,
+    Catch,
+    Finally,
+
     // Keywords — audit
     Show,
     All,
@@ -221,6 +226,9 @@ pub fn keyword_type(word: &str) -> Option<TokenType> {
         "await" => Some(TokenType::Await),
         "stream" => Some(TokenType::Stream),
         "null" => Some(TokenType::Null),
+        "try" => Some(TokenType::Try),
+        "catch" => Some(TokenType::Catch),
+        "finally" => Some(TokenType::Finally),
         _ => None,
     }
 }

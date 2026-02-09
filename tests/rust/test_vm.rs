@@ -381,3 +381,35 @@ fn vm_return_null_for_implicit_return() {
     let src = "contract test()\n  body:\n    let x = 42";
     assert_eq!(run(src), Value::Null);
 }
+
+// ── try/catch/finally (VM) ─────────────────────────────────────────────
+
+#[test]
+fn vm_try_catch_basic() {
+    let src = "contract test()\n  body:\n    try:\n      let x = 1 / 0\n    catch e:\n      return e\n    return \"no error\"";
+    assert_eq!(run(src), Value::Str("Division by zero".into()));
+}
+
+#[test]
+fn vm_try_no_error() {
+    let src = "contract test()\n  body:\n    let r = \"before\"\n    try:\n      r = \"in try\"\n    catch e:\n      r = \"in catch\"\n    return r";
+    assert_eq!(run(src), Value::Str("in try".into()));
+}
+
+#[test]
+fn vm_try_catch_finally() {
+    let src = "contract test()\n  body:\n    let log = \"start\"\n    try:\n      let x = 1 / 0\n    catch e:\n      log = log + \",catch\"\n    finally:\n      log = log + \",finally\"\n    return log";
+    assert_eq!(run(src), Value::Str("start,catch,finally".into()));
+}
+
+#[test]
+fn vm_try_finally_no_catch() {
+    let src = "contract test()\n  body:\n    let log = \"start\"\n    try:\n      log = log + \",try\"\n    finally:\n      log = log + \",finally\"\n    return log";
+    assert_eq!(run(src), Value::Str("start,try,finally".into()));
+}
+
+#[test]
+fn vm_try_success_skips_catch() {
+    let src = "contract test()\n  body:\n    let reached = false\n    try:\n      let x = 42\n    catch e:\n      reached = true\n    return reached";
+    assert_eq!(run(src), Value::Bool(false));
+}

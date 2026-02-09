@@ -77,6 +77,9 @@ const OP_BEGIN_OLD: u8 = 0x73;
 const OP_END_OLD: u8 = 0x74;
 const OP_EMIT_EVENT: u8 = 0x80;
 const OP_HAS_CAPABILITY: u8 = 0x90;
+const OP_SET_HANDLER: u8 = 0xA0;
+const OP_CLEAR_HANDLER: u8 = 0xA1;
+const OP_CATCH_BIND: u8 = 0xA2;
 
 impl Module {
     pub fn serialize(&self) -> Vec<u8> {
@@ -258,6 +261,9 @@ fn serialize_instruction(buf: &mut Vec<u8>, inst: &Instruction) {
         Instruction::EndOld => buf.push(OP_END_OLD),
         Instruction::EmitEvent(n, a) => { buf.push(OP_EMIT_EVENT); write_u16(buf, n); write_u16(buf, a); }
         Instruction::HasCapability => buf.push(OP_HAS_CAPABILITY),
+        Instruction::SetHandler(o) => { buf.push(OP_SET_HANDLER); write_u32(buf, o); }
+        Instruction::ClearHandler => buf.push(OP_CLEAR_HANDLER),
+        Instruction::CatchBind(i) => { buf.push(OP_CATCH_BIND); write_u16(buf, i); }
     }
 }
 
@@ -470,6 +476,9 @@ fn deserialize_instruction(data: &[u8], pos: &mut usize) -> Result<Instruction, 
             Ok(Instruction::EmitEvent(n, a))
         }
         OP_HAS_CAPABILITY => Ok(Instruction::HasCapability),
+        OP_SET_HANDLER => Ok(Instruction::SetHandler(read_u32(data, pos)?)),
+        OP_CLEAR_HANDLER => Ok(Instruction::ClearHandler),
+        OP_CATCH_BIND => Ok(Instruction::CatchBind(read_u16(data, pos)?)),
         _ => Err(format!("Unknown opcode: 0x{:02x}", op)),
     }
 }

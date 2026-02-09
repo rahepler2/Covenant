@@ -30,6 +30,16 @@ struct CallFrame {
     return_type: Option<String>,
 }
 
+/// Exception handler entry on the handler stack
+struct ExceptionHandler {
+    /// Absolute instruction index to jump to on error
+    catch_ip: usize,
+    /// Frame depth when handler was installed
+    frame_depth: usize,
+    /// Stack depth when handler was installed (to unwind stack)
+    stack_depth: usize,
+}
+
 /// The Covenant Virtual Machine
 pub struct VM {
     stack: Vec<Value>,
@@ -39,6 +49,7 @@ pub struct VM {
     constants: Vec<Constant>,
     events: Vec<(String, Vec<Value>)>,
     call_depth: usize,
+    handlers: Vec<ExceptionHandler>,
 }
 
 impl VM {
@@ -55,6 +66,7 @@ impl VM {
             constants: module.constants,
             events: Vec::new(),
             call_depth: 0,
+            handlers: Vec::new(),
         }
     }
 
@@ -144,7 +156,23 @@ impl VM {
             frame.ip += 1;
 
             // Drop the mutable borrow before dispatch
-            self.dispatch(inst)?;
+            match self.dispatch(inst) {
+                Ok(()) => {}
+                Err(err) => {
+                    // Check for exception handler
+                    if let Some(handler) = self.handlers.pop() {
+                        // Unwind stack to handler's saved depth
+                        self.stack.truncate(handler.stack_depth);
+                        // Push error message onto stack for CatchBind
+                        self.stack.push(Value::Str(err.message));
+                        // Jump to catch handler
+                        let frame = self.frames.last_mut().unwrap();
+                        frame.ip = handler.catch_ip;
+                    } else {
+                        return Err(err);
+                    }
+                }
+            }
         }
     }
 
@@ -433,6 +461,27 @@ impl VM {
                 self.pop(); // capability
                 self.pop(); // subject
                 self.stack.push(Value::Bool(true)); // always granted at runtime
+            }
+
+            // ── Error Handling ─────────────────────────────────────────
+            Instruction::SetHandler(catch_ip) => {
+                self.handlers.push(ExceptionHandler {
+                    catch_ip: catch_ip as usize,
+                    frame_depth: self.frames.len(),
+                    stack_depth: self.stack.len(),
+                });
+            }
+            Instruction::ClearHandler => {
+                self.handlers.pop();
+            }
+            Instruction::CatchBind(slot) => {
+                // Error value was pushed by the run loop's error handler
+                let err_val = self.pop();
+                let frame = self.frames.last_mut().unwrap();
+                if (slot as usize) >= frame.locals.len() {
+                    frame.locals.resize(slot as usize + 1, Value::Null);
+                }
+                frame.locals[slot as usize] = err_val;
             }
         }
         Ok(())

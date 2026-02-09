@@ -262,6 +262,41 @@ fn parallel_block() {
     assert!(p.contracts[0].body.is_some());
 }
 
+#[test]
+fn try_catch_statement() {
+    let src = "contract f()\n  body:\n    try:\n      let x = 1\n    catch e:\n      let y = 2\n    return 0";
+    let p = parse(src);
+    let stmts = &p.contracts[0].body.as_ref().unwrap().statements;
+    assert!(matches!(&stmts[0], Statement::TryCatch { .. }));
+}
+
+#[test]
+fn try_catch_finally_statement() {
+    let src = "contract f()\n  body:\n    try:\n      let x = 1\n    catch e:\n      let y = 2\n    finally:\n      let z = 3\n    return 0";
+    let p = parse(src);
+    let stmts = &p.contracts[0].body.as_ref().unwrap().statements;
+    if let Statement::TryCatch { catch_var, finally_body, .. } = &stmts[0] {
+        assert_eq!(catch_var.as_deref(), Some("e"));
+        assert!(!finally_body.is_empty());
+    } else {
+        panic!("Expected TryCatch");
+    }
+}
+
+#[test]
+fn try_finally_no_catch() {
+    let src = "contract f()\n  body:\n    try:\n      let x = 1\n    finally:\n      let z = 3\n    return 0";
+    let p = parse(src);
+    let stmts = &p.contracts[0].body.as_ref().unwrap().statements;
+    if let Statement::TryCatch { catch_var, catch_body, finally_body, .. } = &stmts[0] {
+        assert!(catch_var.is_none());
+        assert!(catch_body.is_empty());
+        assert!(!finally_body.is_empty());
+    } else {
+        panic!("Expected TryCatch");
+    }
+}
+
 // ── Type definitions ────────────────────────────────────────
 
 #[test]

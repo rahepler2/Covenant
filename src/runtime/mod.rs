@@ -434,6 +434,40 @@ impl Interpreter {
                 }
                 Ok(StmtResult::Continue)
             }
+
+            Statement::TryCatch {
+                try_body,
+                catch_var,
+                catch_body,
+                finally_body,
+                ..
+            } => {
+                let try_result = self.exec_statements(try_body);
+
+                let mut result = match try_result {
+                    Ok(res) => Ok(res),
+                    Err(runtime_error) => {
+                        if let Some(var) = catch_var {
+                            self.set_var(var, Value::Str(runtime_error.message));
+                        }
+                        self.exec_statements(catch_body)
+                    }
+                };
+
+                if !finally_body.is_empty() {
+                    match self.exec_statements(finally_body) {
+                        Ok(StmtResult::Return(val)) => {
+                            result = Ok(StmtResult::Return(val));
+                        }
+                        Ok(StmtResult::Continue) => {}
+                        Err(e) => {
+                            result = Err(e);
+                        }
+                    }
+                }
+
+                result
+            }
         }
     }
 

@@ -561,6 +561,9 @@ impl Parser {
         if self.check(TokenType::Parallel) {
             return self.parse_parallel_stmt();
         }
+        if self.check(TokenType::Try) {
+            return self.parse_try_catch_stmt();
+        }
 
         // Parse expression first, then decide if it's an assignment
         let expr = self.parse_expression()?;
@@ -720,6 +723,53 @@ impl Parser {
         self.expect(TokenType::Dedent)?;
 
         Ok(Statement::Parallel { loc, branches })
+    }
+
+    fn parse_try_catch_stmt(&mut self) -> Result<Statement, ParseError> {
+        let loc = self.loc();
+        self.expect(TokenType::Try)?;
+        self.expect(TokenType::Colon)?;
+        self.expect(TokenType::Newline)?;
+        self.expect(TokenType::Indent)?;
+        let try_body = self.parse_statement_block()?;
+        self.expect(TokenType::Dedent)?;
+
+        let mut catch_var = None;
+        let mut catch_body = Vec::new();
+        let mut finally_body = Vec::new();
+
+        self.skip_newlines();
+        if self.check(TokenType::Catch) {
+            self.advance();
+            // Optional catch variable: `catch e:` or just `catch:`
+            if !self.check(TokenType::Colon) {
+                let tok = self.expect_identifier_or_keyword()?;
+                catch_var = Some(tok.value.clone());
+            }
+            self.expect(TokenType::Colon)?;
+            self.expect(TokenType::Newline)?;
+            self.expect(TokenType::Indent)?;
+            catch_body = self.parse_statement_block()?;
+            self.expect(TokenType::Dedent)?;
+            self.skip_newlines();
+        }
+
+        if self.check(TokenType::Finally) {
+            self.advance();
+            self.expect(TokenType::Colon)?;
+            self.expect(TokenType::Newline)?;
+            self.expect(TokenType::Indent)?;
+            finally_body = self.parse_statement_block()?;
+            self.expect(TokenType::Dedent)?;
+        }
+
+        Ok(Statement::TryCatch {
+            loc,
+            try_body,
+            catch_var,
+            catch_body,
+            finally_body,
+        })
     }
 
     // ── Expressions (precedence climbing) ───────────────────────────────

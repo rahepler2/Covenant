@@ -194,6 +194,12 @@ fn always_returns(stmts: &[Statement]) -> bool {
                     return true;
                 }
             }
+            Statement::TryCatch { try_body, catch_body, .. } => {
+                // If both try and catch always return, the whole block returns
+                if always_returns(try_body) && always_returns(catch_body) {
+                    return true;
+                }
+            }
             _ => {}
         }
         // For the last statement, if it's a non-returning statement, fall through
@@ -242,6 +248,12 @@ fn find_dead_code(stmts: &[Statement]) -> Vec<SourceLocation> {
             for branch in branches {
                 dead.extend(find_dead_code(branch));
             }
+        }
+        // Recurse into try/catch/finally
+        if let Statement::TryCatch { try_body, catch_body, finally_body, .. } = stmt {
+            dead.extend(find_dead_code(try_body));
+            dead.extend(find_dead_code(catch_body));
+            dead.extend(find_dead_code(finally_body));
         }
     }
 

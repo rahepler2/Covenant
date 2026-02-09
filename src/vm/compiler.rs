@@ -334,6 +334,44 @@ impl<'a> ContractCompiler<'a> {
                     self.compile_statements(branch);
                 }
             }
+
+            Statement::TryCatch {
+                try_body,
+                catch_var,
+                catch_body,
+                finally_body,
+                ..
+            } => {
+                // SetHandler(catch_target) — placeholder, patched later
+                let handler_idx = self.instructions.len();
+                self.emit(Instruction::SetHandler(0));
+
+                // Compile try body
+                self.compile_statements(try_body);
+
+                // Try succeeded: clear handler, jump past catch to finally
+                self.emit(Instruction::ClearHandler);
+                let jump_to_finally = self.emit_jump(Instruction::Jump(0));
+
+                // Catch target — patch the SetHandler
+                let catch_target = self.current_offset() as u32;
+                self.instructions[handler_idx] = Instruction::SetHandler(catch_target);
+
+                // Bind error to catch variable if provided
+                if let Some(var) = catch_var {
+                    let slot = self.resolve_local(var);
+                    self.emit(Instruction::CatchBind(slot));
+                }
+
+                // Compile catch body
+                self.compile_statements(catch_body);
+
+                // Finally target
+                self.patch_jump(jump_to_finally);
+
+                // Compile finally body
+                self.compile_statements(finally_body);
+            }
         }
     }
 
