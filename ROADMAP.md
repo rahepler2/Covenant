@@ -1,10 +1,10 @@
 # Covenant Roadmap
 
-## v0.1.0 — Foundation (current)
+## v0.1.0 — Foundation
 
 The core language works end-to-end: parse, verify, compile, execute.
 
-**What's shipped:**
+**Shipped:**
 - Lexer, parser, AST with source locations
 - Tree-walking interpreter + bytecode VM (35 opcodes)
 - 5 verification passes: IVE, fingerprinting, capability/IFC, contract verification, static type checking
@@ -17,21 +17,19 @@ The core language works end-to-end: parse, verify, compile, execute.
 - 131 Python tests, 18 example programs
 - Behavioral fingerprinting + SHA-256 intent hashing
 
-**What's missing:** Rust test suite, true concurrency, error handling beyond `on_failure`, no package registry, no editor support.
-
 ---
 
-## v0.2.0 — Reliability
+## v0.2.0 — Reliability (current)
 
-Make it trustworthy. Add a Rust test suite, structured error handling, and harden edge cases.
+Make it trustworthy. Rust test suite, structured error handling, hardened verification.
 
-- [ ] Rust unit + integration tests (target: 200+ tests covering lexer, parser, interpreter, VM, verification)
-- [ ] `try/catch/finally` syntax for structured error handling
+- [x] Rust unit + integration tests (231 tests: lexer, parser, interpreter, VM, verification)
+- [x] `try/catch/finally` syntax — full stack: lexer, parser, AST, interpreter, VM (3 new opcodes)
+- [x] Fix false positives: E003 whitelists stdlib/builtins/sibling contracts, W001/W007 heuristic for indirect mutations
+- [x] CI pipeline (GitHub Actions: build + test + lint + Python tests)
 - [ ] Error type system: typed errors with pattern matching in catch blocks
 - [ ] `Result<T, E>` and `Option<T>` as first-class types
-- [ ] Fix known false positives (W001 on abstract operations, E003 on stdlib calls)
 - [ ] Property-based fuzzing for parser (malformed input doesn't panic)
-- [ ] CI pipeline (GitHub Actions: build + test + lint)
 - [ ] Benchmark suite (parse/verify/run times for standard programs)
 
 ---
