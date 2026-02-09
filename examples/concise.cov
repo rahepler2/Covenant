@@ -1,0 +1,32 @@
+-- Demonstrates concise Covenant syntax
+-- All the verbosity-reduction features in one file
+
+intent: "Demonstrate concise contract syntax"
+scope: demo.concise
+risk: low
+
+-- Expression-body shorthand: one-line contracts
+contract square(n: Int) -> Int = n * n
+contract double(n: Int) -> Int = n * 2
+contract greet(name: String) -> String = "Hello, " + name + "!"
+
+-- Optional return type: omit -> Type when not needed
+contract say_hello()
+  body:
+    print("Hello from Covenant!")
+
+-- pure keyword: shorthand for effects: touches_nothing_else
+contract add(a: Int, b: Int) -> Int
+  pure
+  body:
+    return a + b
+
+-- Minimal contract: just body, no ceremony
+contract main() -> Int
+  body:
+    print(greet("World"))
+    print("square(5) = " + str(square(5)))
+    print("double(7) = " + str(double(7)))
+    print("add(3, 4) = " + str(add(3, 4)))
+    say_hello()
+    return 0

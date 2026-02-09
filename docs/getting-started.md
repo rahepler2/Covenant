@@ -41,29 +41,24 @@ intent: "Say hello to the world"
 scope: demo.hello
 risk: low
 
-contract main() -> Int
-  precondition:
-    true
-
-  postcondition:
-    result == 0
-
+contract main()
   body:
     print("Hello from Covenant!")
-    return 0
 ```
 
 Run it:
 
 ```bash
-covenant run hello.cov -c main
+covenant run hello.cov
 ```
 
 Output:
 ```
 Hello from Covenant!
-0
+null
 ```
+
+That's it — 7 lines. The header (intent, scope, risk) is required, but the contract itself is just `body:` and your code. No ceremony for simple things.
 
 ## Core Concepts
 
@@ -99,6 +94,26 @@ Think of it like a legal contract: both sides have obligations. The **caller** m
 
 The more you declare, the more Covenant can verify. At higher risk levels, missing sections become compile errors.
 
+**Shorthand forms** — for simple contracts, you don't need all the ceremony:
+
+```
+-- Expression body: one-liner for pure computations
+contract square(n: Int) -> Int = n * n
+
+-- Just a body: no pre/post/effects needed at low risk
+contract say_hi()
+  body:
+    print("Hi!")
+
+-- `pure` keyword: shorthand for declaring no side effects
+contract add(a: Int, b: Int) -> Int
+  pure
+  body:
+    return a + b
+```
+
+Return type (`-> Type`) is also optional — omit it when you don't need to constrain the output.
+
 ### What is Scope?
 
 Every `.cov` file must declare a **scope** — a namespace that says where this code belongs in your project. Think of it like a package path in Java or Go:
@@ -131,18 +146,18 @@ covenant map --file transfer.cov
 Risk is **not** about how dangerous your code is. It's about **how strict the compiler should be** when checking your code:
 
 ```
-risk: low       -- Warnings for missing sections
-risk: medium    -- Warnings for missing sections
+risk: low       -- No warnings, maximum flexibility
+risk: medium    -- No warnings, moderate verification
 risk: high      -- ERRORS for missing preconditions, postconditions, effects
 risk: critical  -- ERRORS for anything undeclared + strictest flow checking
 ```
 
-For a hello-world demo, `risk: low` is fine — the compiler will gently suggest improvements. For a financial transfer or medical system, `risk: high` or `risk: critical` forces you to declare everything, because the consequences of bugs are severe.
+For a hello-world demo, `risk: low` is fine — the compiler won't bother you about missing sections. For a financial transfer or medical system, `risk: high` or `risk: critical` forces you to declare everything, because the consequences of bugs are severe.
 
 | Risk Level | Missing precondition | Missing postcondition | Missing effects | IFC checks |
 |------------|---------------------|----------------------|----------------|------------|
-| `low` | Warning | Warning | Warning | Basic |
-| `medium` | Warning | Warning | Warning | Basic |
+| `low` | Silent | Silent | Silent | Basic |
+| `medium` | Silent | Silent | Silent | Basic |
 | `high` | **Error** | **Error** | **Error** | Full |
 | `critical` | **Error** | **Error** | **Error** | Full + flow tracing |
 

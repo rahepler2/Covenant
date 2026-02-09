@@ -97,6 +97,7 @@ pub enum TokenType {
     Old,
     Use,
     As,
+    Pure,
 
     // Keywords — audit
     Show,
@@ -143,6 +144,7 @@ impl TokenType {
                 | TokenType::Permissions
                 | TokenType::Has
                 | TokenType::As
+                | TokenType::Pure
         )
     }
 }
@@ -201,6 +203,7 @@ pub fn keyword_type(word: &str) -> Option<TokenType> {
         "all" => Some(TokenType::All),
         "where" => Some(TokenType::Where),
         "since" => Some(TokenType::Since),
+        "pure" => Some(TokenType::Pure),
         _ => None,
     }
 }

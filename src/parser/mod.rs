@@ -236,8 +236,39 @@ impl Parser {
         let params = self.parse_param_list()?;
         self.expect(TokenType::RParen)?;
 
-        self.expect(TokenType::Arrow)?;
-        let return_type = Some(self.parse_type_expr()?);
+        // Return type is optional: `-> Type` or omitted
+        let return_type = if self.check(TokenType::Arrow) {
+            self.advance();
+            Some(self.parse_type_expr()?)
+        } else {
+            None
+        };
+
+        // Expression-body shorthand: `contract square(n: Int) -> Int = n * n`
+        if self.check(TokenType::Assign) {
+            self.advance();
+            let expr = self.parse_expression()?;
+            let body_loc = expr.loc().clone();
+            let body = Body {
+                statements: vec![Statement::Return {
+                    value: expr,
+                    loc: body_loc.clone(),
+                }],
+                loc: body_loc,
+            };
+            return Ok(ContractDef {
+                loc,
+                name,
+                params,
+                return_type,
+                precondition: None,
+                postcondition: None,
+                effects: None,
+                permissions: None,
+                body: Some(body),
+                on_failure: None,
+            });
+        }
 
         self.expect(TokenType::Newline)?;
         self.expect(TokenType::Indent)?;
@@ -261,6 +292,15 @@ impl Parser {
                 postcondition = Some(self.parse_postcondition()?);
             } else if self.check(TokenType::Effects) {
                 effects = Some(self.parse_effects()?);
+            } else if self.check(TokenType::Pure) {
+                // `pure` is shorthand for `effects: touches_nothing_else`
+                let pure_loc = self.loc();
+                self.advance();
+                self.skip_newlines();
+                effects = Some(Effects {
+                    declarations: vec![EffectDecl::TouchesNothingElse { loc: pure_loc.clone() }],
+                    loc: pure_loc,
+                });
             } else if self.check(TokenType::Permissions) {
                 permissions = Some(self.parse_permissions()?);
             } else if self.check(TokenType::Body) {
@@ -272,7 +312,7 @@ impl Parser {
                 return Err(ParseError {
                     message: format!(
                         "Expected contract section (precondition, postcondition, effects, \
-                         permissions, body, on_failure), got {:?}",
+                         pure, permissions, body, on_failure), got {:?}",
                         cur.token_type
                     ),
                     line: cur.line,

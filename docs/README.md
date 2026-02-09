@@ -18,29 +18,33 @@ scope: math.factorial
 risk: low
 
 contract factorial(n: Int) -> Int
-  precondition:
-    n >= 0
-
-  postcondition:
-    result >= 1
-
   body:
     if n <= 1:
       return 1
     return n * factorial(n - 1)
 
-contract main() -> Int
-  precondition:
-    true
-  postcondition:
-    result == 0
+contract main()
   body:
     print(factorial(10))
-    return 0
 ```
 
 ```bash
-covenant run factorial.cov -c main
+covenant run factorial.cov
+```
+
+For critical code, add guarantees — the compiler enforces them:
+
+```
+contract factorial(n: Int) -> Int
+  precondition:
+    n >= 0
+  postcondition:
+    result >= 1
+  pure
+  body:
+    if n <= 1:
+      return 1
+    return n * factorial(n - 1)
 ```
 
 ## Install

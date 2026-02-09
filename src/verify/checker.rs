@@ -75,44 +75,29 @@ pub fn verify_contract(
         return results;
     }
 
-    if contract.precondition.is_none() {
-        let sev = if matches!(risk_level, RiskLevel::High | RiskLevel::Critical) {
-            Severity::Error
-        } else {
-            Severity::Warning
-        };
+    // At low/medium risk, missing sections are fine — no warnings.
+    // At high/critical risk, missing sections are errors.
+    if contract.precondition.is_none() && matches!(risk_level, RiskLevel::High | RiskLevel::Critical) {
         add(
-            sev,
+            Severity::Error,
             "W003",
-            "no precondition — every contract should declare what must be true before execution"
-                .to_string(),
+            "no precondition — required at high/critical risk".to_string(),
         );
     }
 
-    if contract.postcondition.is_none() {
-        let sev = if matches!(risk_level, RiskLevel::High | RiskLevel::Critical) {
-            Severity::Error
-        } else {
-            Severity::Warning
-        };
+    if contract.postcondition.is_none() && matches!(risk_level, RiskLevel::High | RiskLevel::Critical) {
         add(
-            sev,
+            Severity::Error,
             "W004",
-            "no postcondition — every contract should declare what will be true after execution"
-                .to_string(),
+            "no postcondition — required at high/critical risk".to_string(),
         );
     }
 
-    if contract.effects.is_none() {
-        let sev = if matches!(risk_level, RiskLevel::High | RiskLevel::Critical) {
-            Severity::Error
-        } else {
-            Severity::Warning
-        };
+    if contract.effects.is_none() && matches!(risk_level, RiskLevel::High | RiskLevel::Critical) {
         add(
-            sev,
+            Severity::Error,
             "W005",
-            "no effects declaration — every contract must declare its side effects".to_string(),
+            "no effects declaration — required at high/critical risk".to_string(),
         );
     }
 

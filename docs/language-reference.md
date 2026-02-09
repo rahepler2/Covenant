@@ -67,8 +67,8 @@ Risk controls how strict the compiler is, not what the code does:
 
 | Level | Missing pre/postcondition | Missing effects | IFC |
 |-------|--------------------------|----------------|-----|
-| `low` | Warning | Warning | Basic |
-| `medium` | Warning | Warning | Basic |
+| `low` | Silent | Silent | Basic |
+| `medium` | Silent | Silent | Basic |
 | `high` | **Error** | **Error** | Full |
 | `critical` | **Error** | **Error** | Full + flow tracing |
 
@@ -84,6 +84,8 @@ use openai as ai
 Built-in modules (all 20) need no installation. File-based packages are loaded from `./covenant_packages/` or `~/.covenant/packages/`.
 
 ## Contracts
+
+Full form:
 
 ```
 contract name(param1: Type1, param2: Type2) -> ReturnType
@@ -114,15 +116,52 @@ contract name(param1: Type1, param2: Type2) -> ReturnType
     return default_value
 ```
 
+### Concise Forms
+
+**Expression body** — for one-liner pure functions:
+
+```
+contract square(n: Int) -> Int = n * n
+contract greet(name: String) -> String = "Hello, " + name
+```
+
+**Minimal body** — just the implementation, no ceremony:
+
+```
+contract say_hello()
+  body:
+    print("Hello!")
+```
+
+**`pure` keyword** — shorthand for `effects: touches_nothing_else`:
+
+```
+contract add(a: Int, b: Int) -> Int
+  pure
+  body:
+    return a + b
+```
+
+**Optional return type** — omit `-> Type` when not needed:
+
+```
+contract log_message(msg: String)
+  body:
+    print(msg)
+```
+
+At `low` and `medium` risk, missing preconditions, postconditions, and effects produce no warnings. At `high` and `critical` risk, they become errors.
+
 ### Sections
 
-All sections except `body` are optional.
+All sections except `body` are optional (or use expression-body `=` instead).
 
 | Section | Purpose |
 |---------|---------|
 | `precondition` | Boolean expressions that must be true before body executes |
 | `postcondition` | Boolean expressions that must be true after body executes. Can use `result` and `old()` |
 | `effects` | Declared side effects: `modifies`, `reads`, `emits`, `touches_nothing_else` |
+| `pure` | Shorthand for `effects: touches_nothing_else` |
 | `permissions` | Access control: `grants`, `denies`, `escalation` |
 | `body` | The implementation |
 | `on_failure` | Fallback logic if conditions fail |
