@@ -163,7 +163,7 @@ fn ive_04_e004_missing_body() {
         loc: SourceLocation::new("test.cov", 1, 1),
     };
 
-    let results = verify_contract(&contract, None, "test.cov", None, RiskLevel::Low);
+    let results = verify_contract(&contract, None, "test.cov", None, RiskLevel::Low, None);
     assert!(has_code(&results, "E004"),
             "Expected E004 for contract without body, got codes: {:?}", codes(&results));
 }
